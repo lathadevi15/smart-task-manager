@@ -121,6 +121,108 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         max-width: 260px;
         margin-bottom: 24px;
       }
+      /* ── Productivity Heatmap ─────────────────────────────── */
+      .heatmap-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        margin-top: 12px;
+      }
+
+      .heatmap-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .heatmap-filter-btn {
+        font-family: inherit;
+        font-size: 13px;
+        padding: 7px 14px;
+        border-radius: 20px;
+        border: 1px solid #ddd;
+        background: #fff;
+        cursor: pointer;
+        color: #444;
+      }
+
+      .heatmap-filter-btn:hover:not(:disabled) {
+        border-color: #999;
+      }
+
+      .heatmap-filter-btn.active {
+        background: #28a745;
+        border-color: #28a745;
+        color: #fff;
+      }
+
+      .heatmap-filter-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .heatmap-legend {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 14px;
+        font-size: 13px;
+        color: #555;
+      }
+
+      .heatmap-legend .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .heatmap-calendar {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .heatmap-week-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #444;
+        margin-bottom: 6px;
+      }
+
+      .heatmap-days-header,
+      .heatmap-days-row {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(32px, 1fr));
+        gap: 6px;
+      }
+
+      .heatmap-days-header span {
+        font-size: 11px;
+        text-align: center;
+        color: #888;
+      }
+
+      .heatmap-day {
+        aspect-ratio: 1 / 1;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        border: 1px solid #e5e5e5;
+        cursor: default;
+      }
+
+      .heatmap-day-empty {
+        border: none;
+        background: transparent;
+      }
+
+      .heatmap-day.level-0 { background: #ffffff; }
+      .heatmap-day.level-1 { background: #fff3b0; }
+      .heatmap-day.level-2 { background: #c6e9c8; }
+      .heatmap-day.level-3 { background: #7fcf85; }
+      .heatmap-day.level-4 { background: #2e9e42; }
     </style>
   </head>
 
@@ -241,18 +343,18 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
             <div class="stat-card">
               <div class="stat-icon icon-green"><i class="fas fa-check-circle"></i></div>
               <div class="stat-info">
-                <p class="stat-number" id="completedCount">0</p>
+                <p class="stat-number" id="completedCountAlt">0</p>
                 <p class="stat-label">Completed</p>
-                <p class="stat-sub" id="completedPercent">0% of total</p>
+                <p class="stat-sub" id="completedPercentAlt">0% of total</p>
               </div>
             </div>
 
             <div class="stat-card">
               <div class="stat-icon icon-orange"><i class="fas fa-clock"></i></div>
               <div class="stat-info">
-                <p class="stat-number" id="pendingCount">0</p>
+                <p class="stat-number" id="pendingCountAlt">0</p>
                 <p class="stat-label">Pending</p>
-                <p class="stat-sub" id="pendingPercent">0% of total</p>
+                <p class="stat-sub" id="pendingPercentAlt">0% of total</p>
               </div>
             </div>
 
@@ -394,12 +496,26 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       <!-- ───── EMPTY PLACEHOLDER TABS (heading only, no content yet) ───── -->
 
       <!-- Overview Cards group -->
-      <div class="tab-section" id="tab-overdue">
-        <div class="container placeholder-tab">
-          <p class="head">Overdue</p>
-          <p class="placeholder-note">No content yet.</p>
+     <div class="tab-section" id="tab-overdue">
+  <div class="container">
+    <p class="head">Overdue</p>
+    <p class="sub-head">Tasks past their due date</p>
+
+    <div class="stats-cards stat-card-single">
+      <div class="stat-card">
+        <div class="stat-icon icon-orange"><i class="fas fa-triangle-exclamation"></i></div>
+        <div class="stat-info">
+          <p class="stat-number" id="overdueCount">0</p>
+          <p class="stat-label">Overdue</p>
+          <p class="stat-sub">Tasks pending</p>
         </div>
       </div>
+    </div>
+  </div>
+  <div class="tasks">
+    <ul id="overdueTaskList"></ul>
+  </div>
+</div>
 
       <div class="tab-section" id="tab-completion-rate">
         <div class="container placeholder-tab">
@@ -426,16 +542,24 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       </div>
 
       <div class="tab-section" id="tab-daily-completion">
-        <div class="container placeholder-tab">
+        <div class="container">
           <p class="head">Daily Completion</p>
-          <p class="placeholder-note">No content yet.</p>
+          <p class="sub-head">How many tasks did I complete every day? (this week)</p>
+
+          <div class="chart-card">
+            <canvas id="dailyCompletionChart"></canvas>
+          </div>
         </div>
       </div>
 
       <div class="tab-section" id="tab-weekly-trend">
-        <div class="container placeholder-tab">
+        <div class="container">
           <p class="head">Weekly Trend</p>
-          <p class="placeholder-note">No content yet.</p>
+          <p class="sub-head">Tasks completed over the last 4 weeks</p>
+
+          <div class="chart-card">
+            <canvas id="weeklyTrendChart"></canvas>
+          </div>
         </div>
       </div>
 
@@ -447,16 +571,36 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       </div>
 
       <div class="tab-section" id="tab-priority-distribution">
-        <div class="container placeholder-tab">
+        <div class="container">
           <p class="head">Priority Distribution</p>
-          <p class="placeholder-note">No content yet.</p>
+          <p class="sub-head">Shows workload by priority</p>
+
+          <div class="chart-card">
+            <canvas id="priorityDistributionChart"></canvas>
+          </div>
         </div>
       </div>
 
       <div class="tab-section" id="tab-productivity-heatmap">
-        <div class="container placeholder-tab">
+        <div class="container">
           <p class="head">Productivity Heatmap</p>
-          <p class="placeholder-note">No content yet.</p>
+          <p class="sub-head">How many tasks did you complete each day?</p>
+
+          <div class="heatmap-wrapper">
+            <div class="heatmap-filters" id="heatmapFilters">
+              <button class="heatmap-filter-btn" data-range="today">Today</button>
+              <button class="heatmap-filter-btn" data-range="7d">Last 7 Days</button>
+              <button class="heatmap-filter-btn active" data-range="30d">Last 30 Days</button>
+              <button class="heatmap-filter-btn" data-range="3m">Last 3 Months</button>
+              <button class="heatmap-filter-btn" data-range="6m">Last 6 Months</button>
+              <button class="heatmap-filter-btn" data-range="year">This Year</button>
+              <button class="heatmap-filter-btn" data-range="custom" disabled title="Coming soon">Custom Range</button>
+            </div>
+
+            <div class="heatmap-legend" id="heatmapLegend"></div>
+
+            <div class="heatmap-calendar" id="heatmapCalendar"></div>
+          </div>
         </div>
       </div>
 

@@ -7,6 +7,7 @@ const completedTaskList = document.getElementById("completedTaskList"); // Compl
 const pendingTaskList   = document.getElementById("pendingTaskList");   // Pending list
 const totalTasksSearchInput = document.getElementById("totalTasksSearchInput"); // Total Tasks search
 const dueDateInput = document.getElementById("dueDate");
+const overdueTaskList = document.getElementById("overdueTaskList");
 
 // Custom Dropdown
 const customSelect = document.querySelector(".custom-select");
@@ -18,6 +19,9 @@ let tasks            = [];
 let totalTasksFilter  = "all";     // for Total Tasks tab
 let selectedPriority = "";
 let taskStatusChart = null;
+let dailyCompletionChart = null;
+let weeklyTrendChart = null;
+let priorityDistributionChart = null;
 
 // ── Dropdown ──────────────────────────────────────────────
 document.querySelector(".selected").addEventListener("click", (e) => {
@@ -53,7 +57,8 @@ function addTask() {
     completed: false,
     priority: selectedPriority,
     dueDate: dueDateInput.value,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    completedAt: null
   });
   saveToLocalStorage();
   renderTasks();
@@ -89,6 +94,9 @@ function buildTaskItem(task) {
   checkbox.checked = task.completed;
   checkbox.addEventListener("change", () => {
     task.completed = !task.completed;
+    // Track when a task was completed so we can chart daily completions.
+    // Clearing it when a task is un-checked keeps the chart accurate.
+    task.completedAt = task.completed ? new Date().toISOString() : null;
     saveToLocalStorage();
     renderTasks();
   });
@@ -200,12 +208,18 @@ function populateList(ulElement, filter, searchText) {
     // Reverse to show newest first, then take only the 10 most recent
     filtered = [...tasks].reverse().slice(0, 10);
   }
+  else if (filter === "overdue") {
+  const now = new Date();
+  filtered = filtered.filter(t => !t.completed && t.dueDate && new Date(t.dueDate) < now);
+}
 
   if (searchText) {
     filtered = filtered.filter(t => t.text.toLowerCase().includes(searchText.toLowerCase()));
   }
 
   filtered.forEach(task => ulElement.appendChild(buildTaskItem(task)));
+
+  
 }
 
 // ── Render ALL tabs at once ────────────────────────────────
@@ -224,6 +238,8 @@ function renderTasks() {
   // Pending tab — always shows only pending
   populateList(pendingTaskList, "pending", "");
 
+  populateList(overdueTaskList, "overdue", "");
+
   updateStats();
 }
 
@@ -236,14 +252,36 @@ function updateStats() {
 
   // Dashboard cards
   const totalCountEl        = document.getElementById("totalCount");
-  const completedCountEl    = document.getElementById("completedCount");
-  const pendingCountEl      = document.getElementById("pendingCount");
+const completedCountDashboard = document.getElementById("completedCountAlt");
+const pendingCountDashboard   = document.getElementById("pendingCountAlt");
+
+const completedCountTab = document.getElementById("completedCount");
+const pendingCountTab   = document.getElementById("pendingCount");
   const highPriorityCountEl = document.getElementById("highPriorityCount");
 
   if (totalCountEl)        totalCountEl.textContent        = total;
-  if (completedCountEl)    completedCountEl.textContent    = completed;
-  if (pendingCountEl)      pendingCountEl.textContent      = pending;
+// Dashboard cards
+if (completedCountDashboard)
+    completedCountDashboard.textContent = completed;
+
+if (pendingCountDashboard)
+    pendingCountDashboard.textContent = pending;
+
+// Completed/Pending tabs
+if (completedCountTab)
+    completedCountTab.textContent = completed;
+
+if (pendingCountTab)
+    pendingCountTab.textContent = pending;
   if (highPriorityCountEl) highPriorityCountEl.textContent = highPending;
+
+
+
+
+
+
+
+
 
   // Total Tasks tab's own card (separate id to avoid duplicate-id clash with dashboard)
   const totalCountAltEl = document.getElementById("totalCountAlt");
@@ -271,6 +309,14 @@ updateTaskStatusChart(
     pending,
     overdue
 );
+
+const overdueCountEl = document.getElementById("overdueCount");
+if (overdueCountEl) overdueCountEl.textContent = overdue;
+
+updateDailyCompletionChart();
+updateWeeklyTrendChart();
+updatePriorityDistributionChart();
+updateHeatmap();
 }
 
 function updateTaskStatusChart(completed, pending, overdue) {
@@ -334,6 +380,471 @@ function updateTaskStatusChart(completed, pending, overdue) {
   });
 }
 
+// ── Daily Completion chart ──────────────────────────────────
+// Answers: "How many tasks did I complete every day?" for the current
+// week (Monday → Sunday), based on each task's completedAt timestamp.
+function computeWeeklyCompletionCounts() {
+  const now = new Date();
+
+  // Find this week's Monday (start of day), treating Sunday as day 7.
+  const dayIndex = (now.getDay() + 6) % 7; // Mon=0 ... Sun=6
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - dayIndex);
+
+  const counts = [0, 0, 0, 0, 0, 0, 0]; // Mon..Sun
+
+  tasks.forEach(task => {
+    if (!task.completed || !task.completedAt) return;
+    const completedDate = new Date(task.completedAt);
+    const diffDays = Math.floor((completedDate - monday) / (1000 * 60 * 60 * 24));
+    if (diffDays >= 0 && diffDays < 7) {
+      counts[diffDays]++;
+    }
+  });
+
+  return counts;
+}
+
+function updateDailyCompletionChart() {
+  const canvas = document.getElementById("dailyCompletionChart");
+  if (!canvas) return; // tab markup not present, skip safely
+
+  const ctx = canvas.getContext("2d");
+  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const data = computeWeeklyCompletionCounts();
+
+  if (dailyCompletionChart) {
+    dailyCompletionChart.data.datasets[0].data = data;
+    dailyCompletionChart.update();
+    return;
+  }
+
+  dailyCompletionChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Tasks Completed",
+        data: data,
+        borderColor: "#28a745",
+        backgroundColor: "rgba(40, 167, 69, 0.15)",
+        pointBackgroundColor: "#28a745",
+        pointRadius: 4,
+        tension: 0.3,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => `Completed: ${context.raw}`
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: { precision: 0 },
+          title: { display: true, text: "Tasks Completed" }
+        }
+      }
+    }
+  });
+}
+
+// ── Weekly Trend chart ───────────────────────────────────────
+// Answers: "How many tasks did I complete each of the last 4 weeks?"
+// Week 4 is the current week (Mon→Sun), Week 1 is 3 weeks before that.
+function computeWeeklyTrendCounts() {
+  const now = new Date();
+
+  // Start of the current week (Monday, 00:00).
+  const dayIndex = (now.getDay() + 6) % 7; // Mon=0 ... Sun=6
+  const currentWeekStart = new Date(now);
+  currentWeekStart.setHours(0, 0, 0, 0);
+  currentWeekStart.setDate(currentWeekStart.getDate() - dayIndex);
+
+  // Start of each of the last 4 weeks, oldest first.
+  const weekStarts = [3, 2, 1, 0].map(weeksAgo => {
+    const d = new Date(currentWeekStart);
+    d.setDate(d.getDate() - weeksAgo * 7);
+    return d;
+  });
+
+  const counts = [0, 0, 0, 0];
+
+  tasks.forEach(task => {
+    if (!task.completed || !task.completedAt) return;
+    const completedDate = new Date(task.completedAt);
+
+    for (let i = 0; i < weekStarts.length; i++) {
+      const weekStart = weekStarts[i];
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      if (completedDate >= weekStart && completedDate < weekEnd) {
+        counts[i]++;
+        break;
+      }
+    }
+  });
+
+  return counts;
+}
+
+function updateWeeklyTrendChart() {
+  const canvas = document.getElementById("weeklyTrendChart");
+  if (!canvas) return; // tab markup not present, skip safely
+
+  const ctx = canvas.getContext("2d");
+  const labels = ["Week 1", "Week 2", "Week 3", "Week 4"];
+  const data = computeWeeklyTrendCounts();
+
+  if (weeklyTrendChart) {
+    weeklyTrendChart.data.datasets[0].data = data;
+    weeklyTrendChart.update();
+    return;
+  }
+
+  weeklyTrendChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Tasks Completed",
+        data: data,
+        backgroundColor: "#6f42c1",
+        borderRadius: 4,
+        maxBarThickness: 40
+      }]
+    },
+    options: {
+      indexAxis: "y", // horizontal bars, like the ████ mockup
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => `Completed: ${context.raw}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: { precision: 0 },
+          title: { display: true, text: "Tasks Completed" }
+        }
+      }
+    }
+  });
+}
+
+// ── Priority Distribution chart ─────────────────────────────
+// Shows workload by priority: how many tasks fall into each of
+// High / Medium / Low (regardless of completion status).
+function computePriorityDistribution() {
+  const counts = { high: 0, medium: 0, low: 0 };
+
+  tasks.forEach(task => {
+    if (task.priority === "high" || task.priority === "medium" || task.priority === "low") {
+      counts[task.priority]++;
+    }
+  });
+
+  return [counts.high, counts.medium, counts.low];
+}
+
+function updatePriorityDistributionChart() {
+  const canvas = document.getElementById("priorityDistributionChart");
+  if (!canvas) return; // tab markup not present, skip safely
+
+  const ctx = canvas.getContext("2d");
+  const labels = ["High", "Medium", "Low"];
+  const data = computePriorityDistribution();
+
+  if (priorityDistributionChart) {
+    priorityDistributionChart.data.datasets[0].data = data;
+    priorityDistributionChart.update();
+    return;
+  }
+
+  priorityDistributionChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Tasks",
+        data: data,
+        backgroundColor: ["#dc3545", "#fd7e14", "#28a745"],
+        borderRadius: 4,
+        maxBarThickness: 40
+      }]
+    },
+    options: {
+      indexAxis: "y", // horizontal bars, matching the ████ mockup
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => `Tasks: ${context.raw}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: { precision: 0 },
+          title: { display: true, text: "Number of Tasks" }
+        }
+      }
+    }
+  });
+}
+
+// ── Productivity Heatmap ─────────────────────────────────────
+// Visualizes how many tasks were COMPLETED each day, using ONLY
+// task.completedAt (never createdAt or dueDate). Pending tasks are
+// never counted. Layout is a normal vertical calendar (weeks stacked
+// top-to-bottom, Mon→Sun columns) — not GitHub's rotated grid.
+
+let currentHeatmapRange = "30d"; // default selected filter
+
+// Color thresholds — edit `max` / `level` / `emoji` here to retune.
+// `level` maps to the .level-N CSS classes (level-0 = white … level-4 = dark green).
+const HEATMAP_THRESHOLDS = [
+  { level: 0, max: 0,        emoji: "⬜" }, // 0 tasks
+  { level: 1, max: 1,        emoji: "🟨" }, // 1 task
+  { level: 2, max: 3,        emoji: "🟩" }, // 2-3 tasks
+  { level: 3, max: 6,        emoji: "🟩" }, // 4-6 tasks
+  { level: 4, max: Infinity, emoji: "🟩" }  // 7+ tasks
+];
+
+// getFilteredDates(): turns the selected filter key into a concrete
+// { start, end } date range (both normalized to midnight).
+function getHeatmapDateRange(rangeKey) {
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+
+  const start = new Date(end);
+
+  switch (rangeKey) {
+    case "today":
+      break; // start === end
+    case "7d":
+      start.setDate(start.getDate() - 7);
+      break;
+    case "30d":
+      start.setMonth(start.getMonth() - 1);
+      break;
+    case "3m":
+      start.setMonth(start.getMonth() - 3);
+      break;
+    case "6m":
+      start.setMonth(start.getMonth() - 6);
+      break;
+    case "year":
+      start.setMonth(0, 1); // Jan 1st of this year
+      break;
+    default:
+      start.setMonth(start.getMonth() - 1);
+  }
+
+  return { start, end };
+}
+
+// Generates every calendar date between start and end (inclusive).
+function generateDateRangeArray(start, end) {
+  const dates = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    dates.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+function formatHeatmapDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// groupCompletedTasks(): filters completed tasks, reads completedAt,
+// filters to the selected range, groups by calendar date, and counts.
+function groupCompletedTasksByDate(start, end) {
+  const counts = {};
+
+  tasks.forEach(task => {
+    if (!task.completed || !task.completedAt) return; // pending tasks never counted
+
+    const completedDate = new Date(task.completedAt);
+    completedDate.setHours(0, 0, 0, 0);
+
+    if (completedDate >= start && completedDate <= end) {
+      const key = formatHeatmapDateKey(completedDate);
+      counts[key] = (counts[key] || 0) + 1;
+    }
+  });
+
+  return counts;
+}
+
+// generateCalendarWeeks(): arranges dates into normal calendar weeks
+// (Mon…Sun columns). Weeks are generated dynamically, never stored.
+// The first week is padded with nulls so the first real date lines
+// up under its correct weekday column — exactly like a normal calendar.
+function generateCalendarWeeks(dates) {
+  if (dates.length === 0) return [];
+
+  const weeks = [];
+  let currentWeek = [];
+
+  const firstWeekday = (dates[0].getDay() + 6) % 7; // Mon=0 ... Sun=6
+  for (let i = 0; i < firstWeekday; i++) currentWeek.push(null);
+
+  dates.forEach(date => {
+    currentWeek.push(date);
+    if (currentWeek.length === 7) {
+      weeks.push(currentWeek);
+      currentWeek = [];
+    }
+  });
+
+  if (currentWeek.length > 0) {
+    while (currentWeek.length < 7) currentWeek.push(null);
+    weeks.push(currentWeek);
+  }
+
+  return weeks;
+}
+
+// getColorLevel(): converts a completed-task count into a threshold entry.
+function getColorLevel(count) {
+  for (const t of HEATMAP_THRESHOLDS) {
+    if (count <= t.max) return t;
+  }
+  return HEATMAP_THRESHOLDS[HEATMAP_THRESHOLDS.length - 1];
+}
+
+function renderHeatmapLegend() {
+  const legendEl = document.getElementById("heatmapLegend");
+  if (!legendEl) return;
+
+  const legendLabels = ["0", "1", "2-3", "4-6", "7+"];
+  legendEl.innerHTML = "";
+
+  HEATMAP_THRESHOLDS.forEach((t, i) => {
+    const item = document.createElement("span");
+    item.classList.add("legend-item");
+
+    const swatch = document.createElement("span");
+    swatch.classList.add("heatmap-day", `level-${t.level}`);
+    swatch.style.width = "16px";
+    swatch.style.height = "16px";
+    swatch.style.fontSize = "10px";
+    swatch.textContent = t.emoji;
+
+    const label = document.createElement("span");
+    label.textContent = legendLabels[i];
+
+    item.appendChild(swatch);
+    item.appendChild(label);
+    legendEl.appendChild(item);
+  });
+}
+
+// renderHeatmap(): builds every week row and day cell dynamically —
+// no hardcoded HTML squares.
+function renderHeatmap(weeks, counts) {
+  const calendarEl = document.getElementById("heatmapCalendar");
+  if (!calendarEl) return;
+
+  calendarEl.innerHTML = "";
+  const dayHeaders = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  weeks.forEach((week, weekIndex) => {
+    const weekWrapper = document.createElement("div");
+    weekWrapper.classList.add("heatmap-week");
+
+    const weekLabel = document.createElement("div");
+    weekLabel.classList.add("heatmap-week-label");
+    weekLabel.textContent = `Week ${weekIndex + 1}`;
+    weekWrapper.appendChild(weekLabel);
+
+    const headerRow = document.createElement("div");
+    headerRow.classList.add("heatmap-days-header");
+    dayHeaders.forEach(d => {
+      const span = document.createElement("span");
+      span.textContent = d;
+      headerRow.appendChild(span);
+    });
+    weekWrapper.appendChild(headerRow);
+
+    const daysRow = document.createElement("div");
+    daysRow.classList.add("heatmap-days-row");
+
+    week.forEach(date => {
+      const dayCell = document.createElement("div");
+
+      if (!date) {
+        // Empty leading cell so the first week lines up under the
+        // correct weekday column, per normal calendar behavior.
+        dayCell.classList.add("heatmap-day", "heatmap-day-empty");
+        daysRow.appendChild(dayCell);
+        return;
+      }
+
+      const key = formatHeatmapDateKey(date);
+      const count = counts[key] || 0;
+      const levelInfo = getColorLevel(count);
+
+      dayCell.classList.add("heatmap-day", `level-${levelInfo.level}`);
+      dayCell.textContent = levelInfo.emoji;
+
+      const dateLabel = date.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+      dayCell.title = `${dateLabel}\nCompleted Tasks: ${count}`;
+
+      daysRow.appendChild(dayCell);
+    });
+
+    weekWrapper.appendChild(daysRow);
+    calendarEl.appendChild(weekWrapper);
+  });
+}
+
+// updateHeatmap(): the single entry point — orchestrates the full
+// tasks[] → filtered dates → grouped counts → weeks → render pipeline.
+function updateHeatmap() {
+  const calendarEl = document.getElementById("heatmapCalendar");
+  if (!calendarEl) return; // tab markup not present, skip safely
+
+  const { start, end } = getHeatmapDateRange(currentHeatmapRange);
+  const dates = generateDateRangeArray(start, end);
+  const counts = groupCompletedTasksByDate(start, end);
+  const weeks = generateCalendarWeeks(dates);
+
+  renderHeatmapLegend();
+  renderHeatmap(weeks, counts);
+}
+
+// Filter buttons: switch range, mark active, re-render.
+const heatmapFilterButtons = document.querySelectorAll(".heatmap-filter-btn");
+heatmapFilterButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    if (btn.disabled) return;
+    currentHeatmapRange = btn.dataset.range;
+    heatmapFilterButtons.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    updateHeatmap();
+  });
+});
+
 // ── Total Tasks tab filter buttons ─────────────────────────
 const totalTasksAllBtn       = document.getElementById("totalTasksAllBtn");
 const totalTasksCompletedBtn = document.getElementById("totalTasksCompletedBtn");
@@ -386,6 +897,7 @@ const allTabTriggers = document.querySelectorAll("[data-tab]");
 const allTabSections = document.querySelectorAll(".tab-section");
 
 function activateTab(tabName) {
+  localStorage.setItem("activeTab", tabName); 
   // Switch visible section
   allTabSections.forEach(section => section.classList.remove("active"));
   const target = document.getElementById(`tab-${tabName}`);
@@ -410,6 +922,15 @@ function activateTab(tabName) {
   if (tabName === "task-status" && taskStatusChart) {
     taskStatusChart.resize();
   }
+  if (tabName === "daily-completion" && dailyCompletionChart) {
+    dailyCompletionChart.resize();
+  }
+  if (tabName === "weekly-trend" && weeklyTrendChart) {
+    weeklyTrendChart.resize();
+  }
+  if (tabName === "priority-distribution" && priorityDistributionChart) {
+    priorityDistributionChart.resize();
+  }
 }
 
 allTabTriggers.forEach(trigger => {
@@ -427,4 +948,5 @@ if (viewAllBtn) {
 // ── Init ──────────────────────────────────────────────────
 loadTasks();
 renderTasks();
-activateTab("dashboard"); // Dashboard is the default landing view
+const savedTab = localStorage.getItem("activeTab") || "dashboard";
+activateTab(savedTab);
