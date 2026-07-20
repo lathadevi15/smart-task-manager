@@ -223,6 +223,117 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       .heatmap-day.level-2 { background: #c6e9c8; }
       .heatmap-day.level-3 { background: #7fcf85; }
       .heatmap-day.level-4 { background: #2e9e42; }
+      /* ── Best Day ──────────────────────────────────────────── */
+      .best-day-topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+
+      .best-day-range-control {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .best-day-presets {
+        display: flex;
+        gap: 6px;
+      }
+
+      .best-day-preset-btn {
+        font-family: inherit;
+        font-size: 13px;
+        padding: 6px 12px;
+        border-radius: 20px;
+        border: 1px solid #ddd;
+        background: #fff;
+        cursor: pointer;
+        color: #444;
+      }
+
+      .best-day-preset-btn:hover {
+        border-color: #999;
+      }
+
+      .best-day-preset-btn.active {
+        background: #28a745;
+        border-color: #28a745;
+        color: #fff;
+      }
+
+      .best-day-range-input {
+        font-family: inherit;
+        font-size: 13px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        min-width: 220px;
+        cursor: pointer;
+        background: #fff;
+        color: #333;
+      }
+
+      .best-day-result {
+        margin-top: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .best-day-empty {
+        color: #888;
+        font-size: 14px;
+      }
+
+      .best-day-card {
+        background: linear-gradient(135deg, #28a745, #20893a);
+        color: #fff;
+        border-radius: 12px;
+        padding: 20px 24px;
+      }
+
+      .best-day-card-label {
+        font-size: 13px;
+        opacity: 0.9;
+        margin-bottom: 6px;
+      }
+
+      .best-day-card-date {
+        font-size: 22px;
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+
+      .best-day-card-count {
+        font-size: 14px;
+        opacity: 0.95;
+      }
+
+      .best-day-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .best-day-list-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        font-size: 13px;
+        color: #444;
+      }
+
+      .best-day-list-row.is-best {
+        border-color: #28a745;
+        background: #f2faf3;
+        font-weight: 600;
+      }
     </style>
   </head>
 
@@ -606,9 +717,24 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
       <!-- Insights group -->
       <div class="tab-section" id="tab-best-day">
-        <div class="container placeholder-tab">
-          <p class="head">Best Day</p>
-          <p class="placeholder-note">No content yet.</p>
+        <div class="container">
+          <div class="best-day-topbar">
+            <div>
+              <p class="head">Best Day</p>
+              <p class="sub-head">The day you completed the most tasks</p>
+            </div>
+
+            <div class="best-day-range-control">
+              <div class="best-day-presets" id="bestDayPresets">
+                <button class="best-day-preset-btn" data-preset="today">Today</button>
+                <button class="best-day-preset-btn" data-preset="yesterday">Yesterday</button>
+                <button class="best-day-preset-btn active" data-preset="last-week">Last Week</button>
+              </div>
+              <input type="text" id="bestDayRangeInput" class="best-day-range-input" placeholder="Select date range" readonly>
+            </div>
+          </div>
+
+          <div class="best-day-result" id="bestDayResult"></div>
         </div>
       </div>
 

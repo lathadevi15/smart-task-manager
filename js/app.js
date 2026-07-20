@@ -317,6 +317,7 @@ updateDailyCompletionChart();
 updateWeeklyTrendChart();
 updatePriorityDistributionChart();
 updateHeatmap();
+refreshBestDay();
 }
 
 function updateTaskStatusChart(completed, pending, overdue) {
@@ -844,6 +845,165 @@ heatmapFilterButtons.forEach(btn => {
     updateHeatmap();
   });
 });
+
+// ── Best Day ──────────────────────────────────────────────────
+// Shows the day (within a user-selected range) on which the most
+// tasks were COMPLETED — based only on completedAt, same rule as
+// the heatmap. Defaults to "Last Week" on first load.
+
+let currentBestDayRange = null; // { start, end } — remembered so task edits can refresh the view
+
+function getStartOfWeek(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const weekday = (d.getDay() + 6) % 7; // Mon=0 ... Sun=6
+  d.setDate(d.getDate() - weekday);
+  return d;
+}
+
+function getBestDayPresetRange(preset) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (preset === "today") {
+    return { start: new Date(today), end: new Date(today) };
+  }
+
+  if (preset === "yesterday") {
+    const y = new Date(today);
+    y.setDate(y.getDate() - 1);
+    return { start: y, end: new Date(y) };
+  }
+
+  // "last-week" = the previous full Mon→Sun calendar week
+  const thisWeekStart = getStartOfWeek(today);
+  const lastWeekStart = new Date(thisWeekStart);
+  lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+  const lastWeekEnd = new Date(thisWeekStart);
+  lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
+  return { start: lastWeekStart, end: lastWeekEnd };
+}
+
+// Reuses formatHeatmapDateKey() (already defined above) to group by date.
+function computeBestDayCounts(start, end) {
+  const counts = {};
+
+  tasks.forEach(task => {
+    if (!task.completed || !task.completedAt) return;
+
+    const completedDate = new Date(task.completedAt);
+    completedDate.setHours(0, 0, 0, 0);
+
+    if (completedDate >= start && completedDate <= end) {
+      const key = formatHeatmapDateKey(completedDate);
+      counts[key] = (counts[key] || 0) + 1;
+    }
+  });
+
+  return counts;
+}
+
+function formatBestDayDate(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+}
+
+function renderBestDay(counts) {
+  const resultEl = document.getElementById("bestDayResult");
+  if (!resultEl) return;
+
+  resultEl.innerHTML = "";
+
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+  if (entries.length === 0) {
+    resultEl.innerHTML = '<p class="best-day-empty">No completed tasks in this range yet.</p>';
+    return;
+  }
+
+  const maxCount = entries[0][1];
+  const bestDays = entries.filter(([, count]) => count === maxCount);
+
+  const bestCard = document.createElement("div");
+  bestCard.classList.add("best-day-card");
+  const bestDatesLabel = bestDays.map(([key]) => formatBestDayDate(key)).join(" & ");
+  bestCard.innerHTML = `
+    <div class="best-day-card-label">🏆 Best Day${bestDays.length > 1 ? "s" : ""}</div>
+    <div class="best-day-card-date">${bestDatesLabel}</div>
+    <div class="best-day-card-count">${maxCount} task${maxCount === 1 ? "" : "s"} completed</div>
+  `;
+  resultEl.appendChild(bestCard);
+
+  // Ranked list of every day in range that had at least one completion,
+  // for context around the best day(s).
+  if (entries.length > 1) {
+    const listEl = document.createElement("div");
+    listEl.classList.add("best-day-list");
+    entries.forEach(([key, count]) => {
+      const row = document.createElement("div");
+      row.classList.add("best-day-list-row");
+      if (count === maxCount) row.classList.add("is-best");
+      row.innerHTML = `<span>${formatBestDayDate(key)}</span><span>${count} completed</span>`;
+      listEl.appendChild(row);
+    });
+    resultEl.appendChild(listEl);
+  }
+}
+
+function updateBestDay(start, end) {
+  currentBestDayRange = { start, end };
+  renderBestDay(computeBestDayCounts(start, end));
+}
+
+// Re-renders the currently selected range (called on every task change),
+// without altering which range is selected.
+function refreshBestDay() {
+  if (currentBestDayRange) {
+    renderBestDay(computeBestDayCounts(currentBestDayRange.start, currentBestDayRange.end));
+  }
+}
+
+// Range picker (flatpickr, already loaded for the due-date field) —
+// double-month range calendar, same interaction as the screenshot.
+const bestDayRangeInput = document.getElementById("bestDayRangeInput");
+let bestDayRangePicker = null;
+if (bestDayRangeInput) {
+  bestDayRangePicker = flatpickr(bestDayRangeInput, {
+    mode: "range",
+    dateFormat: "Y-m-d",
+    showMonths: 2,
+    onChange: (selectedDates) => {
+      if (selectedDates.length === 2) {
+        const start = new Date(selectedDates[0]);
+        const end = new Date(selectedDates[1]);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        document.querySelectorAll(".best-day-preset-btn").forEach(b => b.classList.remove("active"));
+        updateBestDay(start, end);
+      }
+    }
+  });
+}
+
+// Preset buttons (Today / Yesterday / Last Week)
+const bestDayPresetButtons = document.querySelectorAll(".best-day-preset-btn");
+bestDayPresetButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const { start, end } = getBestDayPresetRange(btn.dataset.preset);
+    bestDayPresetButtons.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    if (bestDayRangePicker) bestDayRangePicker.setDate([start, end], false);
+    updateBestDay(start, end);
+  });
+});
+
+// Default view: Last Week
+if (bestDayRangeInput) {
+  const defaultRange = getBestDayPresetRange("last-week");
+  if (bestDayRangePicker) bestDayRangePicker.setDate([defaultRange.start, defaultRange.end], false);
+  updateBestDay(defaultRange.start, defaultRange.end);
+}
 
 // ── Total Tasks tab filter buttons ─────────────────────────
 const totalTasksAllBtn       = document.getElementById("totalTasksAllBtn");
