@@ -334,6 +334,61 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         background: #f2faf3;
         font-weight: 600;
       }
+      /* ── Recent Activity (Recently Added / Completed / Upcoming) ── */
+      .activity-list {
+        list-style: none;
+        margin: 20px 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .activity-item {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        border: 1px solid #eee;
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      .activity-icon {
+        font-size: 18px;
+        flex-shrink: 0;
+      }
+
+      .activity-main {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .activity-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: #222;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .activity-meta {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+        color: #777;
+      }
+
+      .activity-empty {
+        list-style: none;
+        color: #888;
+        font-size: 14px;
+        padding: 14px 16px;
+      }
     </style>
   </head>
 
@@ -726,8 +781,6 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
             <div class="best-day-range-control">
               <div class="best-day-presets" id="bestDayPresets">
-                <button class="best-day-preset-btn" data-preset="today">Today</button>
-                <button class="best-day-preset-btn" data-preset="yesterday">Yesterday</button>
                 <button class="best-day-preset-btn active" data-preset="last-week">Last Week</button>
               </div>
               <input type="text" id="bestDayRangeInput" class="best-day-range-input" placeholder="Select date range" readonly>
@@ -761,23 +814,26 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
       <!-- Recent Activity group -->
       <div class="tab-section" id="tab-recently-added">
-        <div class="container placeholder-tab">
+        <div class="container">
           <p class="head">Recently Added</p>
-          <p class="placeholder-note">No content yet.</p>
+          <p class="sub-head">Your latest created tasks</p>
+          <ul class="activity-list" id="recentlyAddedList"></ul>
         </div>
       </div>
 
       <div class="tab-section" id="tab-recently-completed">
-        <div class="container placeholder-tab">
+        <div class="container">
           <p class="head">Recently Completed</p>
-          <p class="placeholder-note">No content yet.</p>
+          <p class="sub-head">Your latest finished tasks</p>
+          <ul class="activity-list" id="recentlyCompletedList"></ul>
         </div>
       </div>
 
       <div class="tab-section" id="tab-upcoming-deadlines">
-        <div class="container placeholder-tab">
+        <div class="container">
           <p class="head">Upcoming Deadlines</p>
-          <p class="placeholder-note">No content yet.</p>
+          <p class="sub-head">Pending tasks due soon</p>
+          <ul class="activity-list" id="upcomingDeadlinesList"></ul>
         </div>
       </div>
 

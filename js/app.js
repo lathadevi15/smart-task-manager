@@ -318,6 +318,7 @@ updateWeeklyTrendChart();
 updatePriorityDistributionChart();
 updateHeatmap();
 refreshBestDay();
+updateRecentActivity();
 }
 
 function updateTaskStatusChart(completed, pending, overdue) {
@@ -1003,6 +1004,191 @@ if (bestDayRangeInput) {
   const defaultRange = getBestDayPresetRange("last-week");
   if (bestDayRangePicker) bestDayRangePicker.setDate([defaultRange.start, defaultRange.end], false);
   updateBestDay(defaultRange.start, defaultRange.end);
+}
+
+// ── Recent Activity ──────────────────────────────────────────
+// Three independent panels: Recently Added (createdAt), Recently
+// Completed (completedAt), Upcoming Deadlines (dueDate, pending only).
+
+// formatRelativeTime(): "Just now" / "5 minutes ago" / "1 hour ago" /
+// "Yesterday" / "2 days ago" / "1 week ago" — never a raw timestamp.
+function formatRelativeTime(dateInput) {
+  const date = new Date(dateInput);
+  const now = new Date();
+  const diffSec = Math.floor((now - date) / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+
+  if (diffSec < 60) return "Just now";
+  if (diffMin < 60) return `${diffMin} minute${diffMin === 1 ? "" : "s"} ago`;
+  if (diffHour < 24) return `${diffHour} hour${diffHour === 1 ? "" : "s"} ago`;
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfDate = new Date(date);
+  startOfDate.setHours(0, 0, 0, 0);
+  const dayDiff = Math.round((startOfToday - startOfDate) / (1000 * 60 * 60 * 24));
+
+  if (dayDiff <= 0) return "Today";
+  if (dayDiff === 1) return "Yesterday";
+  if (dayDiff < 7) return `${dayDiff} days ago`;
+
+  const weeks = Math.floor(dayDiff / 7);
+  if (weeks < 5) return `${weeks} week${weeks === 1 ? "" : "s"} ago`;
+
+  const months = Math.floor(dayDiff / 30);
+  return `${months} month${months === 1 ? "" : "s"} ago`;
+}
+
+// formatDeadlineStatus(): "Today" / "Tomorrow" / "3 days left" / "1 week left"
+function formatDeadlineStatus(dueDateInput) {
+  const due = new Date(dueDateInput);
+  due.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((due - today) / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Tomorrow";
+  if (diffDays < 7) return `${diffDays} days left`;
+
+  const weeks = Math.floor(diffDays / 7);
+  return `${weeks} week${weeks === 1 ? "" : "s"} left`;
+}
+
+function getActivityPriorityLabel(priority) {
+  if (!priority) return "No Priority";
+  return `${priority.charAt(0).toUpperCase()}${priority.slice(1)} Priority`;
+}
+
+// Builds one <li class="activity-item"> using safe DOM APIs (textContent
+// for the task name) so task text is never interpreted as HTML.
+function buildActivityItem(icon, taskText, priority, metaText) {
+  const li = document.createElement("li");
+  li.classList.add("activity-item");
+
+  const iconSpan = document.createElement("span");
+  iconSpan.classList.add("activity-icon");
+  iconSpan.textContent = icon;
+
+  const main = document.createElement("div");
+  main.classList.add("activity-main");
+
+  const nameEl = document.createElement("div");
+  nameEl.classList.add("activity-name");
+  nameEl.textContent = taskText;
+
+  const metaEl = document.createElement("div");
+  metaEl.classList.add("activity-meta");
+
+  const badge = document.createElement("span");
+  badge.classList.add("priority-badge", priority || "no-priority");
+  badge.textContent = getActivityPriorityLabel(priority);
+
+  const timeEl = document.createElement("span");
+  timeEl.classList.add("activity-time");
+  timeEl.textContent = metaText;
+
+  metaEl.appendChild(badge);
+  metaEl.appendChild(timeEl);
+  main.appendChild(nameEl);
+  main.appendChild(metaEl);
+
+  li.appendChild(iconSpan);
+  li.appendChild(main);
+  return li;
+}
+
+function renderActivityEmptyState(listEl, message) {
+  listEl.innerHTML = "";
+  const li = document.createElement("li");
+  li.classList.add("activity-empty");
+  li.textContent = message;
+  listEl.appendChild(li);
+}
+
+// FEATURE 1 — Recently Added: sorted by createdAt, newest first, top 5.
+function renderRecentlyAdded() {
+  const listEl = document.getElementById("recentlyAddedList");
+  if (!listEl) return;
+
+  const items = [...tasks]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 5);
+
+  if (items.length === 0) {
+    renderActivityEmptyState(listEl, "No tasks added yet.");
+    return;
+  }
+
+  listEl.innerHTML = "";
+  items.forEach(task => {
+    listEl.appendChild(
+      buildActivityItem("➕", task.text, task.priority, formatRelativeTime(task.createdAt))
+    );
+  });
+}
+
+// FEATURE 2 — Recently Completed: completed tasks only, sorted by
+// completedAt, newest first, top 5.
+function renderRecentlyCompleted() {
+  const listEl = document.getElementById("recentlyCompletedList");
+  if (!listEl) return;
+
+  const items = tasks
+    .filter(t => t.completed && t.completedAt)
+    .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+    .slice(0, 5);
+
+  if (items.length === 0) {
+    renderActivityEmptyState(listEl, "No completed tasks yet.");
+    return;
+  }
+
+  listEl.innerHTML = "";
+  items.forEach(task => {
+    listEl.appendChild(
+      buildActivityItem("✔", task.text, task.priority, `Completed ${formatRelativeTime(task.completedAt)}`)
+    );
+  });
+}
+
+// FEATURE 3 — Upcoming Deadlines: pending tasks with a dueDate that is
+// today or later, sorted nearest-first, top 5.
+function renderUpcomingDeadlines() {
+  const listEl = document.getElementById("upcomingDeadlinesList");
+  if (!listEl) return;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const items = tasks
+    .filter(t => {
+      if (t.completed || !t.dueDate) return false;
+      const due = new Date(t.dueDate);
+      due.setHours(0, 0, 0, 0);
+      return due >= today;
+    })
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+    .slice(0, 5);
+
+  if (items.length === 0) {
+    renderActivityEmptyState(listEl, "No upcoming deadlines.");
+    return;
+  }
+
+  listEl.innerHTML = "";
+  items.forEach(task => {
+    listEl.appendChild(
+      buildActivityItem("⏰", task.text, task.priority, formatDeadlineStatus(task.dueDate))
+    );
+  });
+}
+
+function updateRecentActivity() {
+  renderRecentlyAdded();
+  renderRecentlyCompleted();
+  renderUpcomingDeadlines();
 }
 
 // ── Total Tasks tab filter buttons ─────────────────────────
