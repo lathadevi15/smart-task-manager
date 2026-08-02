@@ -27,6 +27,11 @@ let priorityDistributionChart = null;
 // Selected date range per Overview card tab (null = "All Time").
 // Each entry is either null or { start: Date, end: Date } (midnight-normalized).
 let overviewRanges = { totalTasks: null, completed: null, pending: null, overdue: null };
+let taskStatusRange = null;         // null = "All Time"
+let weeklyTrendRange = null;        // null = default "Last 4 Weeks" behavior
+let priorityDistributionRange = null; // null = "All Time"
+let heatmapCustomRange = null;      // set once the user picks dates via "Custom Range"
+let dailyCompletionRange = null;    // null = default "This Week" (Mon-Sun) behavior
 
 // ── Dropdown ──────────────────────────────────────────────
 document.querySelector(".selected").addEventListener("click", (e) => {
@@ -353,10 +358,13 @@ if (pendingCountTab)
     return new Date(task.dueDate) < new Date();
 
 }).length;
+const taskStatusCompleted = countCompletedInRange(taskStatusRange);
+const taskStatusPending   = countPendingInRange(taskStatusRange);
+const taskStatusOverdue   = countOverdueInRange(taskStatusRange);
 updateTaskStatusChart(
-    completed,
-    pending,
-    overdue
+    taskStatusCompleted,
+    taskStatusPending,
+    taskStatusOverdue
 );
 
 const overdueCountEl = document.getElementById("overdueCount");
@@ -459,15 +467,39 @@ function computeWeeklyCompletionCounts() {
   return counts;
 }
 
+// Custom range mode: reuses the SAME helpers the Heatmap already built —
+// generateDateRangeArray() to list every day, groupCompletedTasksByDate()
+// to count completions per day, formatHeatmapDateKey() to match them up.
+// This is the "good function" — it doesn't reinvent date math, it just
+// asks for a day-by-day count over an arbitrary range and re-labels it.
+function computeDailyCompletionForRange(range) {
+  const dates = generateDateRangeArray(range.start, range.end);
+  const counts = groupCompletedTasksByDate(range.start, range.end);
+
+  const labels = dates.map(d => d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }));
+  const data = dates.map(d => counts[formatHeatmapDateKey(d)] || 0);
+
+  return { labels, data };
+}
+
 function updateDailyCompletionChart() {
   const canvas = document.getElementById("dailyCompletionChart");
   if (!canvas) return; // tab markup not present, skip safely
 
   const ctx = canvas.getContext("2d");
-  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const data = computeWeeklyCompletionCounts();
+  let labels, data;
+
+  if (dailyCompletionRange) {
+    const result = computeDailyCompletionForRange(dailyCompletionRange);
+    labels = result.labels;
+    data = result.data;
+  } else {
+    labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    data = computeWeeklyCompletionCounts();
+  }
 
   if (dailyCompletionChart) {
+    dailyCompletionChart.data.labels = labels;
     dailyCompletionChart.data.datasets[0].data = data;
     dailyCompletionChart.update();
     return;
@@ -510,7 +542,7 @@ function updateDailyCompletionChart() {
 }
 
 // ── Weekly Trend chart ───────────────────────────────────────
-// Answers: "How many tasks did I complete each of the last 4 weeks?"
+// Default: "How many tasks did I complete each of the last 4 weeks?"
 // Week 4 is the current week (Mon→Sun), Week 1 is 3 weeks before that.
 function computeWeeklyTrendCounts() {
   const now = new Date();
@@ -548,15 +580,67 @@ function computeWeeklyTrendCounts() {
   return counts;
 }
 
+// Custom range mode: every Mon→Sun week overlapping the selected range,
+// labeled "Week N (Mon)" where N is that week's ordinal position within
+// its own calendar month (day 1-7 = Week 1, 8-14 = Week 2, etc).
+function getWeekOfMonthLabel(weekStartDate) {
+  const monthName = weekStartDate.toLocaleDateString("en-US", { month: "short" });
+  const weekNum = Math.ceil(weekStartDate.getDate() / 7);
+  return `Week ${weekNum} (${monthName})`;
+}
+
+function getWeeksInRange(start, end) {
+  const weeks = [];
+  let cursor = getStartOfWeek(start); // reuses the helper defined for Best Day
+  const lastWeekStart = getStartOfWeek(end);
+
+  while (cursor <= lastWeekStart) {
+    const weekStart = new Date(cursor);
+    const weekEnd = new Date(cursor);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    weeks.push({ start: weekStart, end: weekEnd });
+    cursor = new Date(cursor);
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  return weeks;
+}
+
+function countCompletedInWeek(week) {
+  return tasks.filter(t => {
+    if (!t.completed || !t.completedAt) return false;
+    const d = new Date(t.completedAt);
+    d.setHours(0, 0, 0, 0);
+    return d >= week.start && d <= week.end;
+  }).length;
+}
+
+function computeWeeklyTrendForRange(range) {
+  const weeks = getWeeksInRange(range.start, range.end);
+  return {
+    labels: weeks.map(w => getWeekOfMonthLabel(w.start)),
+    data: weeks.map(w => countCompletedInWeek(w))
+  };
+}
+
 function updateWeeklyTrendChart() {
   const canvas = document.getElementById("weeklyTrendChart");
   if (!canvas) return; // tab markup not present, skip safely
 
   const ctx = canvas.getContext("2d");
-  const labels = ["Week 1", "Week 2", "Week 3", "Week 4"];
-  const data = computeWeeklyTrendCounts();
+  let labels, data;
+
+  if (weeklyTrendRange) {
+    const result = computeWeeklyTrendForRange(weeklyTrendRange);
+    labels = result.labels;
+    data = result.data;
+  } else {
+    labels = ["Week 1", "Week 2", "Week 3", "Week 4"];
+    data = computeWeeklyTrendCounts();
+  }
 
   if (weeklyTrendChart) {
+    weeklyTrendChart.data.labels = labels;
     weeklyTrendChart.data.datasets[0].data = data;
     weeklyTrendChart.update();
     return;
@@ -599,10 +683,13 @@ function updateWeeklyTrendChart() {
 // ── Priority Distribution chart ─────────────────────────────
 // Shows workload by priority: how many tasks fall into each of
 // High / Medium / Low (regardless of completion status).
+// When priorityDistributionRange is set, only tasks created within
+// that range are counted (null = "All Time", the original behavior).
 function computePriorityDistribution() {
   const counts = { high: 0, medium: 0, low: 0 };
 
   tasks.forEach(task => {
+    if (!isWithinRange(task.createdAt, priorityDistributionRange)) return;
     if (task.priority === "high" || task.priority === "medium" || task.priority === "low") {
       counts[task.priority]++;
     }
@@ -702,6 +789,12 @@ function getHeatmapDateRange(rangeKey) {
       break;
     case "year":
       start.setMonth(0, 1); // Jan 1st of this year
+      break;
+    case "custom":
+      if (heatmapCustomRange) {
+        return { start: heatmapCustomRange.start, end: heatmapCustomRange.end };
+      }
+      start.setMonth(start.getMonth() - 1); // fallback until a range is actually picked
       break;
     default:
       start.setMonth(start.getMonth() - 1);
@@ -889,6 +982,7 @@ function updateHeatmap() {
 // Filter buttons: switch range, mark active, re-render.
 const heatmapFilterButtons = document.querySelectorAll(".heatmap-filter-btn");
 heatmapFilterButtons.forEach(btn => {
+  if (btn.dataset.range === "custom") return; // handled separately by flatpickr below
   btn.addEventListener("click", () => {
     if (btn.disabled) return;
     currentHeatmapRange = btn.dataset.range;
@@ -1454,6 +1548,163 @@ setupOverviewRangePicker("totalTasks", "totalTasksRangeInput", "totalTasksRangeR
 setupOverviewRangePicker("completed", "completedRangeInput", "completedRangeReset");
 setupOverviewRangePicker("pending", "pendingRangeInput", "pendingRangeReset");
 setupOverviewRangePicker("overdue", "overdueRangeInput", "overdueRangeReset");
+
+// ── Daily Completion range picker ───────────────────────────
+// Selecting a range switches from the default "this week" 7-point line
+// into custom-range mode showing one point per calendar day in range.
+const dailyCompletionRangeInput = document.getElementById("dailyCompletionRangeInput");
+const dailyCompletionRangeReset = document.getElementById("dailyCompletionRangeReset");
+const dailyCompletionSubHead = document.getElementById("dailyCompletionSubHead");
+if (dailyCompletionRangeInput) {
+  const dailyCompletionPicker = flatpickr(dailyCompletionRangeInput, {
+    mode: "range",
+    dateFormat: "Y-m-d",
+    showMonths: 2,
+    onChange: (selectedDates) => {
+      if (selectedDates.length === 2) {
+        const start = new Date(selectedDates[0]);
+        const end = new Date(selectedDates[1]);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        dailyCompletionRange = { start, end };
+        if (dailyCompletionSubHead) dailyCompletionSubHead.textContent = "How many tasks did I complete each day in the selected range?";
+        updateDailyCompletionChart();
+      }
+    }
+  });
+
+  if (dailyCompletionRangeReset) {
+    dailyCompletionRangeReset.addEventListener("click", () => {
+      dailyCompletionRange = null;
+      dailyCompletionPicker.clear();
+      if (dailyCompletionSubHead) dailyCompletionSubHead.textContent = "How many tasks did I complete every day? (this week)";
+      updateDailyCompletionChart();
+    });
+  }
+}
+
+// ── Task Status range picker ────────────────────────────────
+const taskStatusRangeInput = document.getElementById("taskStatusRangeInput");
+const taskStatusRangeReset = document.getElementById("taskStatusRangeReset");
+if (taskStatusRangeInput) {
+  const taskStatusPicker = flatpickr(taskStatusRangeInput, {
+    mode: "range",
+    dateFormat: "Y-m-d",
+    showMonths: 2,
+    onChange: (selectedDates) => {
+      if (selectedDates.length === 2) {
+        const start = new Date(selectedDates[0]);
+        const end = new Date(selectedDates[1]);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        taskStatusRange = { start, end };
+        updateStats();
+      }
+    }
+  });
+
+  if (taskStatusRangeReset) {
+    taskStatusRangeReset.addEventListener("click", () => {
+      taskStatusRange = null;
+      taskStatusPicker.clear();
+      updateStats();
+    });
+  }
+}
+
+// ── Weekly Trend range picker ───────────────────────────────
+// Selecting a range switches from the default "last 4 weeks" view into
+// custom-range mode with "Week N (Month)" labels; reset returns to default.
+const weeklyTrendRangeInput = document.getElementById("weeklyTrendRangeInput");
+const weeklyTrendRangeReset = document.getElementById("weeklyTrendRangeReset");
+const weeklyTrendSubHead = document.getElementById("weeklyTrendSubHead");
+if (weeklyTrendRangeInput) {
+  const weeklyTrendPicker = flatpickr(weeklyTrendRangeInput, {
+    mode: "range",
+    dateFormat: "Y-m-d",
+    showMonths: 2,
+    onChange: (selectedDates) => {
+      if (selectedDates.length === 2) {
+        const start = new Date(selectedDates[0]);
+        const end = new Date(selectedDates[1]);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        weeklyTrendRange = { start, end };
+        if (weeklyTrendSubHead) weeklyTrendSubHead.textContent = "Tasks completed in the selected range";
+        updateWeeklyTrendChart();
+      }
+    }
+  });
+
+  if (weeklyTrendRangeReset) {
+    weeklyTrendRangeReset.addEventListener("click", () => {
+      weeklyTrendRange = null;
+      weeklyTrendPicker.clear();
+      if (weeklyTrendSubHead) weeklyTrendSubHead.textContent = "Tasks completed over the last 4 weeks";
+      updateWeeklyTrendChart();
+    });
+  }
+}
+
+// ── Priority Distribution range picker ──────────────────────
+const priorityDistributionRangeInput = document.getElementById("priorityDistributionRangeInput");
+const priorityDistributionRangeReset = document.getElementById("priorityDistributionRangeReset");
+if (priorityDistributionRangeInput) {
+  const priorityDistributionPicker = flatpickr(priorityDistributionRangeInput, {
+    mode: "range",
+    dateFormat: "Y-m-d",
+    showMonths: 2,
+    onChange: (selectedDates) => {
+      if (selectedDates.length === 2) {
+        const start = new Date(selectedDates[0]);
+        const end = new Date(selectedDates[1]);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        priorityDistributionRange = { start, end };
+        updatePriorityDistributionChart();
+      }
+    }
+  });
+
+  if (priorityDistributionRangeReset) {
+    priorityDistributionRangeReset.addEventListener("click", () => {
+      priorityDistributionRange = null;
+      priorityDistributionPicker.clear();
+      updatePriorityDistributionChart();
+    });
+  }
+}
+
+// ── Productivity Heatmap: Custom Range button ───────────────
+// Attaches flatpickr directly to the button; selecting a range sets it
+// active (like the other heatmap filter buttons) and re-renders.
+const heatmapCustomRangeBtn = document.getElementById("heatmapCustomRangeBtn");
+if (heatmapCustomRangeBtn) {
+  const heatmapCustomRangeDefaultLabel = heatmapCustomRangeBtn.textContent;
+
+  flatpickr(heatmapCustomRangeBtn, {
+    mode: "range",
+    dateFormat: "Y-m-d",
+    showMonths: 2,
+    onChange: (selectedDates) => {
+      if (selectedDates.length === 2) {
+        const start = new Date(selectedDates[0]);
+        const end = new Date(selectedDates[1]);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        heatmapCustomRange = { start, end };
+        currentHeatmapRange = "custom";
+
+        document.querySelectorAll(".heatmap-filter-btn").forEach(b => b.classList.remove("active"));
+        heatmapCustomRangeBtn.classList.add("active");
+        heatmapCustomRangeBtn.textContent =
+          `${start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} - ${end.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+
+        updateHeatmap();
+      }
+    }
+  });
+}
 
 // ── Total Tasks tab filter buttons ─────────────────────────
 const totalTasksAllBtn       = document.getElementById("totalTasksAllBtn");

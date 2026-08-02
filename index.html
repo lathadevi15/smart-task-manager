@@ -846,10 +846,16 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       <!-- Performance Charts group -->
       <div class="tab-section" id="tab-task-status">
         <div class="container">
-          <p class="head">Task Status</p>
-           <p class="sub-head">
-            Overview of completed, pending and overdue tasks
-        </p>
+          <div class="overview-topbar">
+            <div>
+              <p class="head">Task Status</p>
+              <p class="sub-head">Overview of completed, pending and overdue tasks</p>
+            </div>
+            <div class="range-picker-wrapper">
+              <input type="text" id="taskStatusRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <button type="button" class="range-picker-reset" id="taskStatusRangeReset">All Time</button>
+            </div>
+          </div>
 
         <div class="chart-card">
 
@@ -862,8 +868,16 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
       <div class="tab-section" id="tab-daily-completion">
         <div class="container">
-          <p class="head">Daily Completion</p>
-          <p class="sub-head">How many tasks did I complete every day? (this week)</p>
+          <div class="overview-topbar">
+            <div>
+              <p class="head">Daily Completion</p>
+              <p class="sub-head" id="dailyCompletionSubHead">How many tasks did I complete every day? (this week)</p>
+            </div>
+            <div class="range-picker-wrapper">
+              <input type="text" id="dailyCompletionRangeInput" class="range-picker-input" placeholder="This Week" readonly>
+              <button type="button" class="range-picker-reset" id="dailyCompletionRangeReset">This Week</button>
+            </div>
+          </div>
 
           <div class="chart-card">
             <canvas id="dailyCompletionChart"></canvas>
@@ -873,8 +887,16 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
       <div class="tab-section" id="tab-weekly-trend">
         <div class="container">
-          <p class="head">Weekly Trend</p>
-          <p class="sub-head">Tasks completed over the last 4 weeks</p>
+          <div class="overview-topbar">
+            <div>
+              <p class="head">Weekly Trend</p>
+              <p class="sub-head" id="weeklyTrendSubHead">Tasks completed over the last 4 weeks</p>
+            </div>
+            <div class="range-picker-wrapper">
+              <input type="text" id="weeklyTrendRangeInput" class="range-picker-input" placeholder="Last 4 Weeks" readonly>
+              <button type="button" class="range-picker-reset" id="weeklyTrendRangeReset">Last 4 Weeks</button>
+            </div>
+          </div>
 
           <div class="chart-card">
             <canvas id="weeklyTrendChart"></canvas>
@@ -901,8 +923,16 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
       <div class="tab-section" id="tab-priority-distribution">
         <div class="container">
-          <p class="head">Priority Distribution</p>
-          <p class="sub-head">Shows workload by priority</p>
+          <div class="overview-topbar">
+            <div>
+              <p class="head">Priority Distribution</p>
+              <p class="sub-head">Shows workload by priority</p>
+            </div>
+            <div class="range-picker-wrapper">
+              <input type="text" id="priorityDistributionRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <button type="button" class="range-picker-reset" id="priorityDistributionRangeReset">All Time</button>
+            </div>
+          </div>
 
           <div class="chart-card">
             <canvas id="priorityDistributionChart"></canvas>
@@ -923,7 +953,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <button class="heatmap-filter-btn" data-range="3m">Last 3 Months</button>
               <button class="heatmap-filter-btn" data-range="6m">Last 6 Months</button>
               <button class="heatmap-filter-btn" data-range="year">This Year</button>
-              <button class="heatmap-filter-btn" data-range="custom" disabled title="Coming soon">Custom Range</button>
+              <button class="heatmap-filter-btn" data-range="custom" id="heatmapCustomRangeBtn">Custom Range</button>
             </div>
 
             <div class="heatmap-legend" id="heatmapLegend"></div>
