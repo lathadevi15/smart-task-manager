@@ -389,6 +389,111 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         font-size: 14px;
         padding: 14px 16px;
       }
+      /* ── Overview cards: top-right range picker (Total/Completed/Pending/Overdue/Completion Rate) ── */
+      .overview-topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 16px;
+        margin-bottom: 4px;
+      }
+
+      .range-picker-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .range-picker-input {
+        font-family: inherit;
+        font-size: 13px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        min-width: 200px;
+        cursor: pointer;
+        background: #fff;
+        color: #333;
+      }
+
+      .range-picker-reset {
+        font-family: inherit;
+        font-size: 13px;
+        padding: 7px 14px;
+        border-radius: 20px;
+        border: 1px solid #ddd;
+        background: #fff;
+        cursor: pointer;
+        color: #444;
+        white-space: nowrap;
+      }
+
+      .range-picker-reset:hover {
+        border-color: #999;
+      }
+
+      /* ── Completion Rate ──────────────────────────────────── */
+      .completion-rate-card {
+        margin-top: 24px;
+        padding: 24px;
+        border: 1px solid #eee;
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .completion-rate-value {
+        font-size: 34px;
+        font-weight: 700;
+        margin-bottom: 14px;
+      }
+
+      .completion-rate-bar-track {
+        width: 100%;
+        height: 16px;
+        background: #eee;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .completion-rate-bar-fill {
+        height: 100%;
+        border-radius: 8px;
+        transition: width 0.3s ease;
+      }
+
+      .completion-rate-sub {
+        margin-top: 12px;
+        font-size: 13px;
+        color: #777;
+      }
+
+      /* Color thresholds — reused for both the % text and the bar fill */
+      .rate-red        { color: #dc3545; }
+      .rate-yellow      { color: #d9a400; }
+      .rate-light-green { color: #4caf50; }
+      .rate-dark-green  { color: #1e7e34; }
+
+      .completion-rate-bar-fill.rate-red        { background: #dc3545; }
+      .completion-rate-bar-fill.rate-yellow      { background: #ffc107; }
+      .completion-rate-bar-fill.rate-light-green { background: #4caf50; }
+      .completion-rate-bar-fill.rate-dark-green  { background: #1e7e34; }
+      /* ── Monthly Trend ─────────────────────────────────────── */
+      .monthly-trend-year-select {
+        font-family: inherit;
+        font-size: 13px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        background: #fff;
+        color: #333;
+        cursor: pointer;
+      }
+
+      .monthly-trend-chart-card {
+        min-height: 480px;
+      }
     </style>
   </head>
 
@@ -576,8 +681,16 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       <!-- ───── TAB: TOTAL TASKS (existing content, kept) ───── -->
       <div class="tab-section" id="tab-total-tasks">
         <div class="container">
-          <p class="head">Total Tasks</p>
-          <p class="sub-head">Every task in one place</p>
+          <div class="overview-topbar">
+            <div>
+              <p class="head">Total Tasks</p>
+              <p class="sub-head">Every task in one place</p>
+            </div>
+            <div class="range-picker-wrapper">
+              <input type="text" id="totalTasksRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <button type="button" class="range-picker-reset" id="totalTasksRangeReset">All Time</button>
+            </div>
+          </div>
 
           <!-- Stat Card -->
           <div class="stats-cards stat-card-single">
@@ -614,8 +727,16 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       <!-- ───── TAB: COMPLETED (existing content, kept) ───── -->
       <div class="tab-section" id="tab-completed">
         <div class="container">
-          <p class="head">Completed</p>
-          <p class="sub-head">Tasks you've finished</p>
+          <div class="overview-topbar">
+            <div>
+              <p class="head">Completed</p>
+              <p class="sub-head">Tasks you've finished</p>
+            </div>
+            <div class="range-picker-wrapper">
+              <input type="text" id="completedRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <button type="button" class="range-picker-reset" id="completedRangeReset">All Time</button>
+            </div>
+          </div>
 
           <div class="stats-cards stat-card-single">
             <div class="stat-card">
@@ -638,8 +759,16 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       <!-- ───── TAB: PENDING (existing content, kept) ───── -->
       <div class="tab-section" id="tab-pending">
         <div class="container">
-          <p class="head">Pending</p>
-          <p class="sub-head">Tasks still in progress</p>
+          <div class="overview-topbar">
+            <div>
+              <p class="head">Pending</p>
+              <p class="sub-head">Tasks still in progress</p>
+            </div>
+            <div class="range-picker-wrapper">
+              <input type="text" id="pendingRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <button type="button" class="range-picker-reset" id="pendingRangeReset">All Time</button>
+            </div>
+          </div>
 
           <div class="stats-cards stat-card-single">
             <div class="stat-card">
@@ -664,8 +793,16 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       <!-- Overview Cards group -->
      <div class="tab-section" id="tab-overdue">
   <div class="container">
-    <p class="head">Overdue</p>
-    <p class="sub-head">Tasks past their due date</p>
+    <div class="overview-topbar">
+      <div>
+        <p class="head">Overdue</p>
+        <p class="sub-head">Tasks past their due date</p>
+      </div>
+      <div class="range-picker-wrapper">
+        <input type="text" id="overdueRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+        <button type="button" class="range-picker-reset" id="overdueRangeReset">All Time</button>
+      </div>
+    </div>
 
     <div class="stats-cards stat-card-single">
       <div class="stat-card">
@@ -684,9 +821,25 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 </div>
 
       <div class="tab-section" id="tab-completion-rate">
-        <div class="container placeholder-tab">
-          <p class="head">Completion Rate</p>
-          <p class="placeholder-note">No content yet.</p>
+        <div class="container">
+          <div class="overview-topbar">
+            <div>
+              <p class="head">Completion Rate</p>
+              <p class="sub-head">Completed ÷ Total × 100</p>
+            </div>
+            <div class="range-picker-wrapper">
+              <input type="text" id="completionRateRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <button type="button" class="range-picker-reset" id="completionRateRangeReset">All Time</button>
+            </div>
+          </div>
+
+          <div class="completion-rate-card">
+            <div class="completion-rate-value" id="completionRateValue">0%</div>
+            <div class="completion-rate-bar-track">
+              <div class="completion-rate-bar-fill" id="completionRateBarFill" style="width: 0%"></div>
+            </div>
+            <p class="completion-rate-sub" id="completionRateSub">0 of 0 tasks completed</p>
+          </div>
         </div>
       </div>
 
@@ -730,9 +883,19 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       </div>
 
       <div class="tab-section" id="tab-monthly-trend">
-        <div class="container placeholder-tab">
-          <p class="head">Monthly Trend</p>
-          <p class="placeholder-note">No content yet.</p>
+        <div class="container">
+          <div class="overview-topbar">
+            <div>
+              <p class="head">Monthly Trend</p>
+              <p class="sub-head">Tasks completed each month</p>
+            </div>
+
+            <select id="monthlyTrendYearSelect" class="monthly-trend-year-select"></select>
+          </div>
+
+          <div class="chart-card monthly-trend-chart-card">
+            <canvas id="monthlyTrendChart"></canvas>
+          </div>
         </div>
       </div>
 

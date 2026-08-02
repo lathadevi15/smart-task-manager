@@ -21,7 +21,12 @@ let selectedPriority = "";
 let taskStatusChart = null;
 let dailyCompletionChart = null;
 let weeklyTrendChart = null;
+let monthlyTrendChart = null;
 let priorityDistributionChart = null;
+
+// Selected date range per Overview card tab (null = "All Time").
+// Each entry is either null or { start: Date, end: Date } (midnight-normalized).
+let overviewRanges = { totalTasks: null, completed: null, pending: null, overdue: null };
 
 // ── Dropdown ──────────────────────────────────────────────
 document.querySelector(".selected").addEventListener("click", (e) => {
@@ -196,7 +201,9 @@ function buildTaskItem(task) {
 }
 
 // ── Populate a <ul> with a filtered task array ─────────────
-function populateList(ulElement, filter, searchText) {
+// dateRange/dateField are optional: when provided, only tasks whose
+// dateField falls within [dateRange.start, dateRange.end] are kept.
+function populateList(ulElement, filter, searchText, dateRange = null, dateField = null) {
   if (!ulElement) return;
   ulElement.innerHTML = "";
 
@@ -212,6 +219,16 @@ function populateList(ulElement, filter, searchText) {
   const now = new Date();
   filtered = filtered.filter(t => !t.completed && t.dueDate && new Date(t.dueDate) < now);
 }
+
+  if (dateRange && dateField) {
+    filtered = filtered.filter(t => {
+      const raw = t[dateField];
+      if (!raw) return false;
+      const d = new Date(raw);
+      d.setHours(0, 0, 0, 0);
+      return d >= dateRange.start && d <= dateRange.end;
+    });
+  }
 
   if (searchText) {
     filtered = filtered.filter(t => t.text.toLowerCase().includes(searchText.toLowerCase()));
@@ -229,21 +246,53 @@ function renderTasks() {
   // Dashboard — Recent Activity (last 10 tasks, newest first)
   populateList(taskList, "recent", "");
 
-  // Total Tasks tab
-  populateList(totalTaskList, totalTasksFilter, totalTasksSearch);
+  // Total Tasks tab (ranged by createdAt)
+  populateList(totalTaskList, totalTasksFilter, totalTasksSearch, overviewRanges.totalTasks, "createdAt");
 
-  // Completed tab — always shows only completed
-  populateList(completedTaskList, "completed", "");
+  // Completed tab — always shows only completed (ranged by completedAt)
+  populateList(completedTaskList, "completed", "", overviewRanges.completed, "completedAt");
 
-  // Pending tab — always shows only pending
-  populateList(pendingTaskList, "pending", "");
+  // Pending tab — always shows only pending (ranged by createdAt)
+  populateList(pendingTaskList, "pending", "", overviewRanges.pending, "createdAt");
 
-  populateList(overdueTaskList, "overdue", "");
+  // Overdue tab (ranged by dueDate)
+  populateList(overdueTaskList, "overdue", "", overviewRanges.overdue, "dueDate");
 
   updateStats();
 }
 
 // ── Stats ─────────────────────────────────────────────────
+// Range-aware counters for the Overview cards (Total/Completed/Pending/
+// Overdue). A null range means "All Time" — matches prior behavior.
+function isWithinRange(rawDate, range) {
+  if (!range) return true;
+  if (!rawDate) return false;
+  const d = new Date(rawDate);
+  d.setHours(0, 0, 0, 0);
+  return d >= range.start && d <= range.end;
+}
+
+function countTotalInRange(range) {
+  return tasks.filter(t => isWithinRange(t.createdAt, range)).length;
+}
+
+function countCompletedInRange(range) {
+  return tasks.filter(t => t.completed && isWithinRange(t.completedAt, range)).length;
+}
+
+function countPendingInRange(range) {
+  return tasks.filter(t => !t.completed && isWithinRange(t.createdAt, range)).length;
+}
+
+function countOverdueInRange(range) {
+  const now = new Date();
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    if (new Date(t.dueDate) >= now) return false;
+    return isWithinRange(t.dueDate, range);
+  }).length;
+}
+
 function updateStats() {
   const total       = tasks.length;
   const completed   = tasks.filter(t => t.completed).length;
@@ -269,10 +318,10 @@ if (pendingCountDashboard)
 
 // Completed/Pending tabs
 if (completedCountTab)
-    completedCountTab.textContent = completed;
+    completedCountTab.textContent = countCompletedInRange(overviewRanges.completed);
 
 if (pendingCountTab)
-    pendingCountTab.textContent = pending;
+    pendingCountTab.textContent = countPendingInRange(overviewRanges.pending);
   if (highPriorityCountEl) highPriorityCountEl.textContent = highPending;
 
 
@@ -285,7 +334,7 @@ if (pendingCountTab)
 
   // Total Tasks tab's own card (separate id to avoid duplicate-id clash with dashboard)
   const totalCountAltEl = document.getElementById("totalCountAlt");
-  if (totalCountAltEl) totalCountAltEl.textContent = total;
+  if (totalCountAltEl) totalCountAltEl.textContent = countTotalInRange(overviewRanges.totalTasks);
 
   const pct = (n) => total > 0 ? Math.round((n / total) * 100) : 0;
 
@@ -311,14 +360,16 @@ updateTaskStatusChart(
 );
 
 const overdueCountEl = document.getElementById("overdueCount");
-if (overdueCountEl) overdueCountEl.textContent = overdue;
+if (overdueCountEl) overdueCountEl.textContent = countOverdueInRange(overviewRanges.overdue);
 
 updateDailyCompletionChart();
 updateWeeklyTrendChart();
 updatePriorityDistributionChart();
+updateMonthlyTrendChart();
 updateHeatmap();
 refreshBestDay();
 updateRecentActivity();
+updateCompletionRate();
 }
 
 function updateTaskStatusChart(completed, pending, overdue) {
@@ -1191,6 +1242,219 @@ function updateRecentActivity() {
   renderUpcomingDeadlines();
 }
 
+// ── Monthly Trend chart ──────────────────────────────────────
+// Same bar-chart design as Weekly Trend. Shows how many tasks were
+// COMPLETED each month of a selected year (based on completedAt only).
+// Defaults to the current year; the year dropdown covers every year
+// from the user's very first task up to the current year.
+
+let currentMonthlyTrendYear = new Date().getFullYear();
+
+// Every year from the earliest task's createdAt to the current year —
+// i.e. "all years since the user started using this app".
+function getAvailableTrendYears() {
+  const currentYear = new Date().getFullYear();
+  let earliestYear = currentYear;
+
+  tasks.forEach(task => {
+    if (!task.createdAt) return;
+    const year = new Date(task.createdAt).getFullYear();
+    if (year < earliestYear) earliestYear = year;
+  });
+
+  const years = [];
+  for (let y = currentYear; y >= earliestYear; y--) years.push(y);
+  return years;
+}
+
+function computeMonthlyTrendCounts(year) {
+  const counts = new Array(12).fill(0);
+
+  tasks.forEach(task => {
+    if (!task.completed || !task.completedAt) return;
+    const completedDate = new Date(task.completedAt);
+    if (completedDate.getFullYear() === year) {
+      counts[completedDate.getMonth()]++;
+    }
+  });
+
+  return counts;
+}
+
+function updateMonthlyTrendChart() {
+  const canvas = document.getElementById("monthlyTrendChart");
+  if (!canvas) return; // tab markup not present, skip safely
+
+  const ctx = canvas.getContext("2d");
+  const labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const data = computeMonthlyTrendCounts(currentMonthlyTrendYear);
+
+  if (monthlyTrendChart) {
+    monthlyTrendChart.data.datasets[0].data = data;
+    monthlyTrendChart.update();
+    return;
+  }
+
+  monthlyTrendChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Tasks Completed",
+        data: data,
+        backgroundColor: "#6f42c1",
+        borderRadius: 4,
+        maxBarThickness: 40
+      }]
+    },
+    options: {
+      indexAxis: "y", // horizontal bars, matching Weekly Trend
+      responsive: true,
+      maintainAspectRatio: false, // let the taller container control height for all 12 bars
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => `Completed: ${context.raw}`
+          }
+        }
+      },
+      scales: {
+        y: {
+          ticks: { autoSkip: false } // always show every month label, Jan–Dec
+        },
+        x: {
+          beginAtZero: true,
+          ticks: { precision: 0 },
+          title: { display: true, text: "Tasks Completed" }
+        }
+      }
+    }
+  });
+}
+
+// Year dropdown: populated dynamically, defaults to the current year.
+const monthlyTrendYearSelect = document.getElementById("monthlyTrendYearSelect");
+if (monthlyTrendYearSelect) {
+  getAvailableTrendYears().forEach(year => {
+    const option = document.createElement("option");
+    option.value = year;
+    option.textContent = year;
+    if (year === currentMonthlyTrendYear) option.selected = true;
+    monthlyTrendYearSelect.appendChild(option);
+  });
+
+  monthlyTrendYearSelect.addEventListener("change", () => {
+    currentMonthlyTrendYear = parseInt(monthlyTrendYearSelect.value, 10);
+    updateMonthlyTrendChart();
+  });
+}
+
+// ── Completion Rate ──────────────────────────────────────────
+// Completion Rate (%) = (Completed Tasks ÷ Total Tasks) × 100
+// Respects the same range picker pattern as the other Overview cards.
+// Both numerator and denominator use createdAt, so the rate answers
+// "of the tasks created in this window, what % are now completed?"
+
+let completionRateRange = null; // null = "All Time"
+
+function getCompletionRateColorClass(rate) {
+  if (rate <= 25) return "rate-red";
+  if (rate <= 50) return "rate-yellow";
+  if (rate <= 75) return "rate-light-green";
+  return "rate-dark-green";
+}
+
+function updateCompletionRate() {
+  const valueEl = document.getElementById("completionRateValue");
+  const fillEl = document.getElementById("completionRateBarFill");
+  const subEl = document.getElementById("completionRateSub");
+  if (!valueEl || !fillEl || !subEl) return; // tab markup not present, skip safely
+
+  const totalInRange = tasks.filter(t => isWithinRange(t.createdAt, completionRateRange)).length;
+  const completedInRange = tasks.filter(t => t.completed && isWithinRange(t.createdAt, completionRateRange)).length;
+  const rate = totalInRange > 0 ? Math.round((completedInRange / totalInRange) * 100) : 0;
+  const colorClass = getCompletionRateColorClass(rate);
+
+  valueEl.textContent = `${rate}%`;
+  valueEl.classList.remove("rate-red", "rate-yellow", "rate-light-green", "rate-dark-green");
+  valueEl.classList.add(colorClass);
+
+  fillEl.style.width = `${rate}%`;
+  fillEl.classList.remove("rate-red", "rate-yellow", "rate-light-green", "rate-dark-green");
+  fillEl.classList.add(colorClass);
+
+  subEl.textContent = `${completedInRange} of ${totalInRange} tasks completed`;
+}
+
+const completionRateRangeInput = document.getElementById("completionRateRangeInput");
+const completionRateRangeReset = document.getElementById("completionRateRangeReset");
+if (completionRateRangeInput) {
+  const completionRatePicker = flatpickr(completionRateRangeInput, {
+    mode: "range",
+    dateFormat: "Y-m-d",
+    showMonths: 2,
+    onChange: (selectedDates) => {
+      if (selectedDates.length === 2) {
+        const start = new Date(selectedDates[0]);
+        const end = new Date(selectedDates[1]);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        completionRateRange = { start, end };
+        updateCompletionRate();
+      }
+    }
+  });
+
+  if (completionRateRangeReset) {
+    completionRateRangeReset.addEventListener("click", () => {
+      completionRateRange = null;
+      completionRatePicker.clear();
+      updateCompletionRate();
+    });
+  }
+}
+
+// ── Overview card range pickers ─────────────────────────────
+// Total Tasks / Completed / Pending / Overdue each get a top-right
+// date-range picker (same flatpickr double-month range calendar used
+// by Best Day). Selecting a range filters both that tab's list and
+// its stat-card number; "All Time" resets back to unfiltered.
+function setupOverviewRangePicker(key, inputId, resetBtnId) {
+  const inputEl = document.getElementById(inputId);
+  const resetBtn = document.getElementById(resetBtnId);
+  if (!inputEl) return;
+
+  const picker = flatpickr(inputEl, {
+    mode: "range",
+    dateFormat: "Y-m-d",
+    showMonths: 2,
+    onChange: (selectedDates) => {
+      if (selectedDates.length === 2) {
+        const start = new Date(selectedDates[0]);
+        const end = new Date(selectedDates[1]);
+        start.setHours(0, 0, 0, 0);
+        end.setHours(0, 0, 0, 0);
+        overviewRanges[key] = { start, end };
+        renderTasks();
+      }
+    }
+  });
+
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      overviewRanges[key] = null;
+      picker.clear();
+      renderTasks();
+    });
+  }
+}
+
+setupOverviewRangePicker("totalTasks", "totalTasksRangeInput", "totalTasksRangeReset");
+setupOverviewRangePicker("completed", "completedRangeInput", "completedRangeReset");
+setupOverviewRangePicker("pending", "pendingRangeInput", "pendingRangeReset");
+setupOverviewRangePicker("overdue", "overdueRangeInput", "overdueRangeReset");
+
 // ── Total Tasks tab filter buttons ─────────────────────────
 const totalTasksAllBtn       = document.getElementById("totalTasksAllBtn");
 const totalTasksCompletedBtn = document.getElementById("totalTasksCompletedBtn");
@@ -1276,6 +1540,9 @@ function activateTab(tabName) {
   }
   if (tabName === "priority-distribution" && priorityDistributionChart) {
     priorityDistributionChart.resize();
+  }
+  if (tabName === "monthly-trend" && monthlyTrendChart) {
+    monthlyTrendChart.resize();
   }
 }
 
