@@ -494,6 +494,68 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       .monthly-trend-chart-card {
         min-height: 480px;
       }
+      /* ── Pagination (Total Tasks / Completed / Pending / Overdue) ── */
+      .pagination-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid #eee;
+      }
+
+      .pagination-per-page {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: #555;
+      }
+
+      .pagination-select {
+        font-family: inherit;
+        font-size: 13px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        border: 1px solid #ddd;
+        background: #fff;
+        color: #333;
+        cursor: pointer;
+      }
+
+      .pagination-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .pagination-btn {
+        font-family: inherit;
+        font-size: 13px;
+        padding: 6px 14px;
+        border-radius: 6px;
+        border: 1px solid #ddd;
+        background: #fff;
+        color: #444;
+        cursor: pointer;
+      }
+
+      .pagination-btn:hover:not(:disabled) {
+        border-color: #999;
+      }
+
+      .pagination-btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .pagination-info {
+        font-size: 13px;
+        color: #666;
+        white-space: nowrap;
+      }
     </style>
   </head>
 
@@ -720,6 +782,24 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         <div class="tasks">
           <ul id="totalTaskList"></ul>
         </div>
+        <div class="pagination-bar">
+          <div class="pagination-per-page">
+            <label for="totalTaskListPerPage">Show</label>
+            <select id="totalTaskListPerPage" class="pagination-select">
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+              <option value="25">25</option>
+              <option value="30">30</option>
+            </select>
+            <span>per page</span>
+          </div>
+          <div class="pagination-controls">
+            <button type="button" class="pagination-btn" id="totalTaskListPrevBtn">‹ Prev</button>
+            <span class="pagination-info" id="totalTaskListPageInfo">Page 1 of 1</span>
+            <button type="button" class="pagination-btn" id="totalTaskListNextBtn">Next ›</button>
+          </div>
+        </div>
       </div>
       <!-- ───── END TAB: TOTAL TASKS ───── -->
 
@@ -752,6 +832,24 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         <div class="tasks">
           <ul id="completedTaskList"></ul>
         </div>
+        <div class="pagination-bar">
+          <div class="pagination-per-page">
+            <label for="completedTaskListPerPage">Show</label>
+            <select id="completedTaskListPerPage" class="pagination-select">
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+              <option value="25">25</option>
+              <option value="30">30</option>
+            </select>
+            <span>per page</span>
+          </div>
+          <div class="pagination-controls">
+            <button type="button" class="pagination-btn" id="completedTaskListPrevBtn">‹ Prev</button>
+            <span class="pagination-info" id="completedTaskListPageInfo">Page 1 of 1</span>
+            <button type="button" class="pagination-btn" id="completedTaskListNextBtn">Next ›</button>
+          </div>
+        </div>
       </div>
       <!-- ───── END TAB: COMPLETED ───── -->
 
@@ -783,6 +881,24 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         </div>
         <div class="tasks">
           <ul id="pendingTaskList"></ul>
+        </div>
+        <div class="pagination-bar">
+          <div class="pagination-per-page">
+            <label for="pendingTaskListPerPage">Show</label>
+            <select id="pendingTaskListPerPage" class="pagination-select">
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="20">20</option>
+              <option value="25">25</option>
+              <option value="30">30</option>
+            </select>
+            <span>per page</span>
+          </div>
+          <div class="pagination-controls">
+            <button type="button" class="pagination-btn" id="pendingTaskListPrevBtn">‹ Prev</button>
+            <span class="pagination-info" id="pendingTaskListPageInfo">Page 1 of 1</span>
+            <button type="button" class="pagination-btn" id="pendingTaskListNextBtn">Next ›</button>
+          </div>
         </div>
       </div>
       <!-- ───── END TAB: PENDING ───── -->
@@ -817,6 +933,24 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   </div>
   <div class="tasks">
     <ul id="overdueTaskList"></ul>
+  </div>
+  <div class="pagination-bar">
+    <div class="pagination-per-page">
+      <label for="overdueTaskListPerPage">Show</label>
+      <select id="overdueTaskListPerPage" class="pagination-select">
+        <option value="10">10</option>
+        <option value="15">15</option>
+        <option value="20">20</option>
+        <option value="25">25</option>
+        <option value="30">30</option>
+      </select>
+      <span>per page</span>
+    </div>
+    <div class="pagination-controls">
+      <button type="button" class="pagination-btn" id="overdueTaskListPrevBtn">‹ Prev</button>
+      <span class="pagination-info" id="overdueTaskListPageInfo">Page 1 of 1</span>
+      <button type="button" class="pagination-btn" id="overdueTaskListNextBtn">Next ›</button>
+    </div>
   </div>
 </div>
 

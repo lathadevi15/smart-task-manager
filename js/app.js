@@ -33,6 +33,14 @@ let priorityDistributionRange = null; // null = "All Time"
 let heatmapCustomRange = null;      // set once the user picks dates via "Custom Range"
 let dailyCompletionRange = null;    // null = default "This Week" (Mon-Sun) behavior
 
+// Pagination state per Overview card list — default 10 tasks per page.
+let listPagination = {
+  totalTasks: { page: 1, perPage: 10 },
+  completed:  { page: 1, perPage: 10 },
+  pending:    { page: 1, perPage: 10 },
+  overdue:    { page: 1, perPage: 10 }
+};
+
 // ── Dropdown ──────────────────────────────────────────────
 document.querySelector(".selected").addEventListener("click", (e) => {
   e.stopPropagation();
@@ -116,7 +124,16 @@ function buildTaskItem(task) {
 
   const due = document.createElement("small");
   due.classList.add("task-due");
-  if (task.dueDate) {
+  if (task.completed && task.completedAt) {
+    const formattedCompleted = new Date(task.completedAt).toLocaleString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    });
+    due.innerText = "Completed at: " + formattedCompleted;
+  } else if (task.dueDate) {
     const formatted = new Date(task.dueDate).toLocaleString("en-IN", {
       day: "numeric",
       month: "short",
@@ -137,7 +154,7 @@ function buildTaskItem(task) {
 
   const textWrapper = document.createElement("div");
   textWrapper.appendChild(span);
-  if (task.dueDate) {
+  if ((task.completed && task.completedAt) || task.dueDate) {
     textWrapper.appendChild(due);
   }
 
@@ -208,7 +225,32 @@ function buildTaskItem(task) {
 // ── Populate a <ul> with a filtered task array ─────────────
 // dateRange/dateField are optional: when provided, only tasks whose
 // dateField falls within [dateRange.start, dateRange.end] are kept.
-function populateList(ulElement, filter, searchText, dateRange = null, dateField = null) {
+// Maps a pagination state key to the HTML id prefix used by its controls.
+const paginationIdPrefixes = {
+  totalTasks: "totalTaskList",
+  completed: "completedTaskList",
+  pending: "pendingTaskList",
+  overdue: "overdueTaskList"
+};
+
+function renderPaginationControls(key, totalItems, page, totalPages) {
+  const idPrefix = paginationIdPrefixes[key];
+  if (!idPrefix) return;
+
+  const infoEl = document.getElementById(`${idPrefix}PageInfo`);
+  const prevBtn = document.getElementById(`${idPrefix}PrevBtn`);
+  const nextBtn = document.getElementById(`${idPrefix}NextBtn`);
+
+  if (infoEl) {
+    infoEl.textContent = totalItems === 0
+      ? "No tasks"
+      : `Page ${page} of ${totalPages} (${totalItems} task${totalItems === 1 ? "" : "s"})`;
+  }
+  if (prevBtn) prevBtn.disabled = page <= 1;
+  if (nextBtn) nextBtn.disabled = page >= totalPages;
+}
+
+function populateList(ulElement, filter, searchText, dateRange = null, dateField = null, paginationKey = null) {
   if (!ulElement) return;
   ulElement.innerHTML = "";
 
@@ -239,7 +281,24 @@ function populateList(ulElement, filter, searchText, dateRange = null, dateField
     filtered = filtered.filter(t => t.text.toLowerCase().includes(searchText.toLowerCase()));
   }
 
-  filtered.forEach(task => ulElement.appendChild(buildTaskItem(task)));
+  let itemsToRender = filtered;
+
+  if (paginationKey && listPagination[paginationKey]) {
+    const state = listPagination[paginationKey];
+    const totalItems = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / state.perPage));
+
+    // Clamp in case a filter/search/range change left the page out of bounds.
+    if (state.page > totalPages) state.page = totalPages;
+    if (state.page < 1) state.page = 1;
+
+    const startIdx = (state.page - 1) * state.perPage;
+    itemsToRender = filtered.slice(startIdx, startIdx + state.perPage);
+
+    renderPaginationControls(paginationKey, totalItems, state.page, totalPages);
+  }
+
+  itemsToRender.forEach(task => ulElement.appendChild(buildTaskItem(task)));
 
   
 }
@@ -251,17 +310,17 @@ function renderTasks() {
   // Dashboard — Recent Activity (last 10 tasks, newest first)
   populateList(taskList, "recent", "");
 
-  // Total Tasks tab (ranged by createdAt)
-  populateList(totalTaskList, totalTasksFilter, totalTasksSearch, overviewRanges.totalTasks, "createdAt");
+  // Total Tasks tab (ranged by createdAt, paginated)
+  populateList(totalTaskList, totalTasksFilter, totalTasksSearch, overviewRanges.totalTasks, "createdAt", "totalTasks");
 
-  // Completed tab — always shows only completed (ranged by completedAt)
-  populateList(completedTaskList, "completed", "", overviewRanges.completed, "completedAt");
+  // Completed tab — always shows only completed (ranged by completedAt, paginated)
+  populateList(completedTaskList, "completed", "", overviewRanges.completed, "completedAt", "completed");
 
-  // Pending tab — always shows only pending (ranged by createdAt)
-  populateList(pendingTaskList, "pending", "", overviewRanges.pending, "createdAt");
+  // Pending tab — always shows only pending (ranged by createdAt, paginated)
+  populateList(pendingTaskList, "pending", "", overviewRanges.pending, "createdAt", "pending");
 
-  // Overdue tab (ranged by dueDate)
-  populateList(overdueTaskList, "overdue", "", overviewRanges.overdue, "dueDate");
+  // Overdue tab (ranged by dueDate, paginated)
+  populateList(overdueTaskList, "overdue", "", overviewRanges.overdue, "dueDate", "overdue");
 
   updateStats();
 }
@@ -1530,6 +1589,7 @@ function setupOverviewRangePicker(key, inputId, resetBtnId) {
         start.setHours(0, 0, 0, 0);
         end.setHours(0, 0, 0, 0);
         overviewRanges[key] = { start, end };
+        if (listPagination[key]) listPagination[key].page = 1;
         renderTasks();
       }
     }
@@ -1539,6 +1599,7 @@ function setupOverviewRangePicker(key, inputId, resetBtnId) {
     resetBtn.addEventListener("click", () => {
       overviewRanges[key] = null;
       picker.clear();
+      if (listPagination[key]) listPagination[key].page = 1;
       renderTasks();
     });
   }
@@ -1548,6 +1609,44 @@ setupOverviewRangePicker("totalTasks", "totalTasksRangeInput", "totalTasksRangeR
 setupOverviewRangePicker("completed", "completedRangeInput", "completedRangeReset");
 setupOverviewRangePicker("pending", "pendingRangeInput", "pendingRangeReset");
 setupOverviewRangePicker("overdue", "overdueRangeInput", "overdueRangeReset");
+
+// ── Pagination controls (per-page select + prev/next) ───────
+function setupListPagination(key) {
+  const idPrefix = paginationIdPrefixes[key];
+  const perPageSelect = document.getElementById(`${idPrefix}PerPage`);
+  const prevBtn = document.getElementById(`${idPrefix}PrevBtn`);
+  const nextBtn = document.getElementById(`${idPrefix}NextBtn`);
+
+  if (perPageSelect) {
+    perPageSelect.value = listPagination[key].perPage;
+    perPageSelect.addEventListener("change", () => {
+      listPagination[key].perPage = parseInt(perPageSelect.value, 10);
+      listPagination[key].page = 1; // reset to first page when page size changes
+      renderTasks();
+    });
+  }
+
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (listPagination[key].page > 1) {
+        listPagination[key].page--;
+        renderTasks();
+      }
+    });
+  }
+
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      listPagination[key].page++; // populateList() clamps if out of bounds
+      renderTasks();
+    });
+  }
+}
+
+setupListPagination("totalTasks");
+setupListPagination("completed");
+setupListPagination("pending");
+setupListPagination("overdue");
 
 // ── Daily Completion range picker ───────────────────────────
 // Selecting a range switches from the default "this week" 7-point line
@@ -1713,23 +1812,26 @@ const totalTasksPendingBtn   = document.getElementById("totalTasksPendingBtn");
 
 if (totalTasksAllBtn) {
   totalTasksAllBtn.addEventListener("click", () => {
-    totalTasksFilter = "all"; renderTasks();
+    totalTasksFilter = "all"; listPagination.totalTasks.page = 1; renderTasks();
   });
 }
 if (totalTasksCompletedBtn) {
   totalTasksCompletedBtn.addEventListener("click", () => {
-    totalTasksFilter = "completed"; renderTasks();
+    totalTasksFilter = "completed"; listPagination.totalTasks.page = 1; renderTasks();
   });
 }
 if (totalTasksPendingBtn) {
   totalTasksPendingBtn.addEventListener("click", () => {
-    totalTasksFilter = "pending"; renderTasks();
+    totalTasksFilter = "pending"; listPagination.totalTasks.page = 1; renderTasks();
   });
 }
 
 // ── Total Tasks search ──────────────────────────────────────
 if (totalTasksSearchInput) {
-  totalTasksSearchInput.addEventListener("input", renderTasks);
+  totalTasksSearchInput.addEventListener("input", () => {
+    listPagination.totalTasks.page = 1;
+    renderTasks();
+  });
 }
 
 flatpickr("#dueDate", {
