@@ -1272,20 +1272,364 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         color: var(--text-muted);
         white-space: nowrap;
       }
+
+      /* =====================================================================
+         RESPONSIVE
+         ≤1024px  tablet + mobile: sidebar becomes an off-canvas drawer
+         ≤768px   task rows / filters stack
+         ≤560px   phones: compact top bar, 2-column stat cards, stacked donuts
+         ≤380px   small phones: 1-column stat cards
+         ===================================================================== */
+
+      /* Drawer controls are hidden on desktop */
+      .topbar-menu-btn,
+      .sidebar-close-btn,
+      .sidebar-backdrop {
+        display: none;
+      }
+
+      @media (max-width: 1024px) {
+
+        /* — Off-canvas sidebar — */
+        .inner-section-1 {
+          position: fixed;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          width: 280px;
+          max-width: 85vw;
+          height: 100vh;
+          height: 100dvh;
+          min-height: 0;
+          overflow-y: auto;
+          z-index: 1200;
+          transform: translateX(-100%);
+          visibility: hidden; /* keeps hidden links out of the tab order */
+          transition: transform 0.28s ease, visibility 0s linear 0.28s, box-shadow 0.28s ease;
+        }
+
+        body.sidebar-open .inner-section-1 {
+          transform: translateX(0);
+          visibility: visible;
+          box-shadow: 0 0 40px rgba(0, 0, 0, 0.3);
+          transition: transform 0.28s ease, visibility 0s, box-shadow 0.28s ease;
+        }
+
+        .sidebar {
+          min-height: 100%;
+          height: auto;
+        }
+
+        .sidebar-backdrop {
+          display: block;
+          position: fixed;
+          inset: 0;
+          z-index: 1100;
+          background: rgba(0, 0, 0, 0.45);
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.28s ease;
+        }
+
+        body.sidebar-open .sidebar-backdrop {
+          opacity: 1;
+          pointer-events: auto;
+        }
+
+        .sidebar-close-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-left: auto;
+          width: 34px;
+          height: 34px;
+          flex-shrink: 0;
+          border-radius: 8px;
+          border: 1px solid var(--border-color);
+          background: var(--toggle-bg);
+          color: var(--toggle-icon-color);
+          font-size: 15px;
+          cursor: pointer;
+        }
+
+        .logo {
+          margin-bottom: 28px;
+        }
+
+        /* — Main area takes the full width — */
+        .inner-section-2 {
+          width: 100%;
+          height: 100vh;
+          height: 100dvh;
+        }
+
+        /* — Top bar: hamburger on the left — */
+        .topbar {
+          justify-content: flex-start;
+          gap: 12px;
+          padding: 0 16px;
+        }
+
+        .topbar-menu-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 38px;
+          height: 38px;
+          flex-shrink: 0;
+          border-radius: 10px;
+          border: 1px solid var(--border-color);
+          background: var(--toggle-bg);
+          color: var(--toggle-icon-color);
+          font-size: 16px;
+          cursor: pointer;
+          transition: background 0.18s ease;
+        }
+
+        .topbar-menu-btn:hover {
+          background: var(--menu-hover-bg);
+        }
+
+        .topbar-left {
+          flex: 1 1 auto;
+        }
+
+        .topbar-right {
+          margin-left: auto;
+        }
+
+        .tab-section {
+          padding: 20px 20px 36px;
+        }
+      }
+
+      @media (max-width: 768px) {
+
+        /* Task rows: details on top, badges + buttons underneath */
+        .task-item {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 10px;
+        }
+
+        .task-right {
+          width: 100%;
+          flex-wrap: wrap;
+        }
+
+        .created-badge {
+          margin-right: auto;
+        }
+
+        .task-text {
+          overflow-wrap: anywhere;
+        }
+
+        .tasks {
+          padding: 10px;
+        }
+
+        /* Range pickers + filters use the full width */
+        .range-picker-wrapper,
+        .best-day-range-control {
+          width: 100%;
+        }
+
+        .range-picker-input-wrapper {
+          flex: 1;
+        }
+
+        .range-picker-input,
+        .best-day-range-input {
+          width: 100%;
+          min-width: 0;
+        }
+
+        .search-sort-row .search-input-wrapper {
+          flex: 1 1 100%;
+          max-width: none;
+        }
+
+        .search-sort-row .custom-select-wide {
+          flex: 1 1 calc(50% - 8px);
+          width: auto;
+        }
+
+        .modal-overlay {
+          padding: 16px;
+          overflow-y: auto;
+        }
+
+        .modal-box {
+          margin: auto;
+        }
+      }
+
+      @media (max-width: 560px) {
+
+        .topbar {
+          height: 60px;
+          min-height: 60px;
+          padding: 0 12px;
+          gap: 10px;
+        }
+
+        .topbar-greeting {
+          font-size: 14px;
+        }
+
+        .topbar-date {
+          font-size: 11px;
+        }
+
+        .topbar-right {
+          gap: 8px;
+        }
+
+        /* Add Task button becomes icon-only */
+        .topbar-add-btn {
+          padding: 0;
+          width: 38px;
+          height: 38px;
+          justify-content: center;
+        }
+
+        .topbar-add-btn span {
+          display: none;
+        }
+
+        .topbar-profile-dropdown {
+          min-width: 190px;
+        }
+
+        .tab-section {
+          padding: 16px 14px 32px;
+        }
+
+        /* Stat cards: two per row */
+        .stats-cards {
+          gap: 12px;
+        }
+
+        .stat-card {
+          flex: 1 1 calc(50% - 6px);
+          min-width: 0;
+          padding: 14px;
+          gap: 10px;
+        }
+
+        .stat-icon {
+          width: 40px;
+          height: 40px;
+          font-size: 17px;
+        }
+
+        .stat-number {
+          font-size: 22px;
+        }
+
+        .info-cards-row {
+          gap: 14px;
+        }
+
+        .info-card {
+          padding: 18px;
+        }
+
+        .info-card-number {
+          font-size: 42px;
+        }
+
+        /* Dashboard charts */
+        .dash-charts-grid {
+          gap: 14px;
+        }
+
+        .dash-chart-card {
+          padding: 16px;
+        }
+
+        .dash-donut-row {
+          flex-direction: column;
+          height: auto;
+          gap: 16px;
+        }
+
+        .dash-donut-wrap {
+          width: 180px;
+          height: 180px;
+        }
+
+        .dash-legend {
+          width: 100%;
+        }
+
+        /* Productivity Heatmap tab: let the 7 columns shrink on narrow screens */
+        .heatmap-days-header,
+        .heatmap-days-row {
+          grid-template-columns: repeat(7, minmax(0, 40px));
+        }
+
+        .completion-rate-value {
+          font-size: 28px;
+        }
+
+        .monthly-trend-chart-card {
+          min-height: 360px;
+        }
+
+        /* Profile */
+        .profile-card {
+          padding: 18px;
+        }
+
+        .profile-actions {
+          flex-wrap: wrap;
+        }
+
+        .profile-status {
+          width: 100%;
+          margin-right: 0;
+        }
+
+        .profile-actions .modal-btn {
+          flex: 1;
+        }
+
+        .topbar-name-modal {
+          padding: 24px 20px 20px;
+        }
+
+        .modal-box {
+          padding: 20px;
+        }
+      }
+
+      @media (max-width: 380px) {
+        .stat-card {
+          flex-basis: 100%;
+        }
+      }
     </style>
   </head>
 
 <body>
   <div class="main-container">
 
+    <!-- Dim layer behind the off-canvas sidebar (tablet / mobile only) -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
     <!-- ===== SIDEBAR ===== -->
-    <div class="inner-section-1">
+    <div class="inner-section-1" id="appSidebar">
       <div class="sidebar">
 
         <!-- Logo -->
         <div class="logo">
           <span class="logo-icon"><i class="fa-solid fa-layer-group"></i></span>
           <h3>Smart Task Manager</h3>
+          <button type="button" class="sidebar-close-btn" id="sidebarCloseBtn" aria-label="Close menu">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
         </div>
 
         <!-- Dashboard (top-level, kept from original) -->
@@ -1360,6 +1704,11 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
       <!-- ===== STICKY TOP BAR ===== -->
       <header class="topbar" id="appTopbar">
+        <!-- Hamburger: opens the sidebar on tablet / mobile -->
+        <button type="button" class="topbar-menu-btn" id="sidebarToggleBtn" aria-label="Open menu" aria-expanded="false" aria-controls="appSidebar">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+
         <!-- Left: greeting + date -->
         <div class="topbar-left">
           <span class="topbar-greeting" id="topbarGreeting">Hi there, Good Morning</span>

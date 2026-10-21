@@ -1969,7 +1969,7 @@ if (bestDayRangeInput) {
   bestDayRangePicker = flatpickr(bestDayRangeInput, {
     mode: "range",
     dateFormat: "Y-m-d",
-    showMonths: 2,
+    showMonths: window.innerWidth < 700 ? 1 : 2,
     onChange: (selectedDates) => {
       if (selectedDates.length === 2) {
         const start = new Date(selectedDates[0]);
@@ -2335,7 +2335,7 @@ if (completionRateRangeInput) {
   const completionRatePicker = flatpickr(completionRateRangeInput, {
     mode: "range",
     dateFormat: "Y-m-d",
-    showMonths: 2,
+    showMonths: window.innerWidth < 700 ? 1 : 2,
     onChange: (selectedDates) => {
       if (selectedDates.length === 2) {
         const start = new Date(selectedDates[0]);
@@ -2370,7 +2370,7 @@ function setupOverviewRangePicker(key, inputId, resetBtnId) {
   const picker = flatpickr(inputEl, {
     mode: "range",
     dateFormat: "Y-m-d",
-    showMonths: 2,
+    showMonths: window.innerWidth < 700 ? 1 : 2,
     onChange: (selectedDates) => {
       if (selectedDates.length === 2) {
         const start = new Date(selectedDates[0]);
@@ -2447,7 +2447,7 @@ if (dailyCompletionRangeInput) {
   const dailyCompletionPicker = flatpickr(dailyCompletionRangeInput, {
     mode: "range",
     dateFormat: "Y-m-d",
-    showMonths: 2,
+    showMonths: window.innerWidth < 700 ? 1 : 2,
     onChange: (selectedDates) => {
       if (selectedDates.length === 2) {
         const start = new Date(selectedDates[0]);
@@ -2478,7 +2478,7 @@ if (taskStatusRangeInput) {
   const taskStatusPicker = flatpickr(taskStatusRangeInput, {
     mode: "range",
     dateFormat: "Y-m-d",
-    showMonths: 2,
+    showMonths: window.innerWidth < 700 ? 1 : 2,
     onChange: (selectedDates) => {
       if (selectedDates.length === 2) {
         const start = new Date(selectedDates[0]);
@@ -2510,7 +2510,7 @@ if (weeklyTrendRangeInput) {
   const weeklyTrendPicker = flatpickr(weeklyTrendRangeInput, {
     mode: "range",
     dateFormat: "Y-m-d",
-    showMonths: 2,
+    showMonths: window.innerWidth < 700 ? 1 : 2,
     onChange: (selectedDates) => {
       if (selectedDates.length === 2) {
         const start = new Date(selectedDates[0]);
@@ -2541,7 +2541,7 @@ if (priorityDistributionRangeInput) {
   const priorityDistributionPicker = flatpickr(priorityDistributionRangeInput, {
     mode: "range",
     dateFormat: "Y-m-d",
-    showMonths: 2,
+    showMonths: window.innerWidth < 700 ? 1 : 2,
     onChange: (selectedDates) => {
       if (selectedDates.length === 2) {
         const start = new Date(selectedDates[0]);
@@ -2573,7 +2573,7 @@ if (heatmapCustomRangeBtn) {
   flatpickr(heatmapCustomRangeBtn, {
     mode: "range",
     dateFormat: "Y-m-d",
-    showMonths: 2,
+    showMonths: window.innerWidth < 700 ? 1 : 2,
     onChange: (selectedDates) => {
       if (selectedDates.length === 2) {
         const start = new Date(selectedDates[0]);
@@ -3365,4 +3365,55 @@ activateTab(savedTab);
     });
   }
 
+})();
+
+
+/* =====================================================================
+   RESPONSIVE SIDEBAR — off-canvas drawer on tablet / mobile (≤1024px)
+   Opened by the hamburger in the top bar; closed by the ✕ button, the dim
+   backdrop, the Esc key, choosing a page, or growing the window to desktop.
+   ===================================================================== */
+(function initSidebarDrawer() {
+  const sidebar    = document.getElementById('appSidebar');
+  const toggleBtn  = document.getElementById('sidebarToggleBtn');
+  const closeBtn   = document.getElementById('sidebarCloseBtn');
+  const backdrop   = document.getElementById('sidebarBackdrop');
+  if (!sidebar || !toggleBtn) return; // markup not present, skip safely
+
+  const desktopQuery = window.matchMedia('(min-width: 1025px)');
+
+  function isOpen() {
+    return document.body.classList.contains('sidebar-open');
+  }
+
+  function openDrawer() {
+    document.body.classList.add('sidebar-open');
+    toggleBtn.setAttribute('aria-expanded', 'true');
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function closeDrawer(restoreFocus = true) {
+    if (!isOpen()) return;
+    document.body.classList.remove('sidebar-open');
+    toggleBtn.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) toggleBtn.focus();
+  }
+
+  toggleBtn.addEventListener('click', () => (isOpen() ? closeDrawer() : openDrawer()));
+  if (closeBtn) closeBtn.addEventListener('click', () => closeDrawer());
+  if (backdrop) backdrop.addEventListener('click', () => closeDrawer());
+
+  // Picking a page (any sidebar item that switches tabs) closes the drawer
+  sidebar.addEventListener('click', (e) => {
+    if (e.target.closest('[data-tab]')) closeDrawer(false);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeDrawer();
+  });
+
+  // Window grew to desktop size: reset so the sidebar is simply visible
+  desktopQuery.addEventListener('change', (e) => {
+    if (e.matches) closeDrawer(false);
+  });
 })();
