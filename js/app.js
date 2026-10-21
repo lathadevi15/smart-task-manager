@@ -6,23 +6,73 @@ const totalTaskList     = document.getElementById("totalTaskList");     // Total
 const completedTaskList = document.getElementById("completedTaskList"); // Completed list
 const pendingTaskList   = document.getElementById("pendingTaskList");   // Pending list
 const totalTasksSearchInput = document.getElementById("totalTasksSearchInput"); // Total Tasks search
+const completedSearchInput = document.getElementById("completedSearchInput"); // Completed search
+const pendingSearchInput   = document.getElementById("pendingSearchInput");   // Pending search
+const overdueSearchInput   = document.getElementById("overdueSearchInput");   // Overdue search
 const dueDateInput = document.getElementById("dueDate");
 const overdueTaskList = document.getElementById("overdueTaskList");
 
-// Custom Dropdown
-const customSelect = document.querySelector(".custom-select");
-const selected     = document.querySelector(".selected span:first-child");
-const options      = document.querySelectorAll(".options li");
+// Custom Dropdown (multi-instance — Add Task priority, Total Tasks sort-by-priority,
+// and Edit Task priority all reuse this same visual design).
+function initCustomSelect(rootEl, onSelect) {
+  if (!rootEl) return null;
+  const selectedEl = rootEl.querySelector(".selected");
+  const selectedTextEl = rootEl.querySelector(".selected span:first-child");
+  const optionEls = rootEl.querySelectorAll(".options li");
+
+  selectedEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.querySelectorAll(".custom-select.active").forEach(el => {
+      if (el !== rootEl) el.classList.remove("active");
+    });
+    rootEl.classList.toggle("active");
+  });
+
+  optionEls.forEach(option => {
+    option.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectedTextEl.textContent = option.textContent;
+      rootEl.classList.remove("active");
+      if (onSelect) onSelect(option.dataset.value, option.textContent);
+    });
+  });
+
+  return {
+    setValue(value, label) {
+      selectedTextEl.textContent = label;
+    }
+  };
+}
+
+document.addEventListener("click", (e) => {
+  document.querySelectorAll(".custom-select.active").forEach(el => {
+    if (!el.contains(e.target)) el.classList.remove("active");
+  });
+});
+
+const addTaskPriorityDropdown = initCustomSelect(
+  document.getElementById("addTaskPriorityDropdown"),
+  (value) => { selectedPriority = value; }
+);
 
 // ── State ─────────────────────────────────────────────────
 let tasks            = [];
-let totalTasksFilter  = "all";     // for Total Tasks tab
+let totalTasksFilter  = "all";     // for Total Tasks tab: "all" | "completed" | "pending" | "overdue"
+let totalTasksPriorityFilter = ""; // "", "high", "medium", "low", or "none" — filters the list to that priority only
+let completedPriorityFilter = ""; // same as above, scoped to the Completed tab
+let pendingPriorityFilter   = ""; // same as above, scoped to the Pending tab
+let overduePriorityFilter   = ""; // same as above, scoped to the Overdue tab
 let selectedPriority = "";
 let taskStatusChart = null;
 let dailyCompletionChart = null;
 let weeklyTrendChart = null;
 let monthlyTrendChart = null;
 let priorityDistributionChart = null;
+let dashTaskStatusChart = null;
+let dashDailyChart = null;
+let dashWeeklyChart = null;
+let dashPriorityChart = null;
+let dashMonthlyChart = null;
 
 // Selected date range per Overview card tab (null = "All Time").
 // Each entry is either null or { start: Date, end: Date } (midnight-normalized).
@@ -42,29 +92,11 @@ let listPagination = {
 };
 
 // ── Dropdown ──────────────────────────────────────────────
-document.querySelector(".selected").addEventListener("click", (e) => {
-  e.stopPropagation();
-  customSelect.classList.toggle("active");
-});
-
-options.forEach(option => {
-  option.addEventListener("click", (e) => {
-    e.stopPropagation();
-    selected.textContent  = option.textContent;
-    selectedPriority      = option.dataset.value;
-    customSelect.classList.remove("active");
-  });
-});
-
-document.addEventListener("click", (e) => {
-  if (!customSelect.contains(e.target)) {
-    customSelect.classList.remove("active");
-  }
-});
+// (Wired above via initCustomSelect for the Add Task priority dropdown.)
 
 // ── Add Task ──────────────────────────────────────────────
-button.addEventListener("click", addTask);
-input.addEventListener("keypress", (e) => { if (e.key === "Enter") addTask(); });
+if (button) button.addEventListener("click", addTask);
+if (input) input.addEventListener("keypress", (e) => { if (e.key === "Enter") addTask(); });
 
 function addTask() {
   const taskText = input.value.trim();
@@ -83,7 +115,7 @@ function addTask() {
 
   input.value        = "";
   dueDateInput.value = "";
-  selected.textContent = "No Priority";
+  if (addTaskPriorityDropdown) addTaskPriorityDropdown.setValue("", "No Priority");
   selectedPriority     = "";
 }
 
@@ -95,6 +127,28 @@ function saveToLocalStorage() {
 function loadTasks() {
   const data = localStorage.getItem("tasks");
   if (data) tasks = JSON.parse(data);
+}
+
+// ── Profile storage + time-format preference ──────────────
+// Profile = { fullName, username, profession, bio, avatar (data URL), timeFormat: "12" | "24" }
+function loadProfile() {
+  try {
+    return JSON.parse(localStorage.getItem("profile")) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveProfile(profile) {
+  localStorage.setItem("profile", JSON.stringify(profile));
+}
+
+function use12Hour() {
+  return loadProfile().timeFormat !== "24"; // 12-hour is the default
+}
+
+function getDueDateFormat() {
+  return use12Hour() ? "d M Y h:i K" : "d M Y H:i";
 }
 
 // ── Build a single <li> for a task ────────────────────────
@@ -111,10 +165,29 @@ function buildTaskItem(task) {
   checkbox.classList.add("task-checkbox");
   checkbox.checked = task.completed;
   checkbox.addEventListener("change", () => {
-    task.completed = !task.completed;
-    // Track when a task was completed so we can chart daily completions.
-    // Clearing it when a task is un-checked keeps the chart accurate.
-    task.completedAt = task.completed ? new Date().toISOString() : null;
+    const wasCompleted = task.completed;
+    const nowChecked = checkbox.checked;
+
+    if (wasCompleted && !nowChecked) {
+      // Unchecking a completed task needs confirmation before it actually changes.
+      openConfirmModal({
+        title: "Mark as Incomplete",
+        message: "Are you sure you want to mark this task as incomplete?",
+        onConfirm: () => {
+          task.completed = false;
+          task.completedAt = null;
+          saveToLocalStorage();
+          renderTasks();
+        },
+        onCancel: () => {
+          checkbox.checked = true;
+        }
+      });
+      return;
+    }
+
+    task.completed = nowChecked;
+    task.completedAt = nowChecked ? new Date().toISOString() : null;
     saveToLocalStorage();
     renderTasks();
   });
@@ -130,7 +203,8 @@ function buildTaskItem(task) {
       month: "short",
       year: "numeric",
       hour: "numeric",
-      minute: "2-digit"
+      minute: "2-digit",
+      hour12: use12Hour()
     });
     due.innerText = "Completed at: " + formattedCompleted;
   } else if (task.dueDate) {
@@ -139,7 +213,8 @@ function buildTaskItem(task) {
       month: "short",
       year: "numeric",
       hour: "numeric",
-      minute: "2-digit"
+      minute: "2-digit",
+      hour12: use12Hour()
     });
     due.innerText = "Due: " + formatted;
   }
@@ -179,21 +254,22 @@ function buildTaskItem(task) {
   editBtn.classList.add("edit-btn");
   editBtn.innerHTML = '<i class="fas fa-pencil-alt"></i> Edit';
   editBtn.onclick = () => {
-    const newText = prompt("Edit task:", task.text);
-    if (newText !== null && newText.trim() !== "") {
-      task.text = newText.trim();
-      saveToLocalStorage();
-      renderTasks();
-    }
+    openEditTaskModal(task);
   };
 
   const deleteBtn = document.createElement("button");
   deleteBtn.classList.add("delete-btn");
   deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i> Delete';
   deleteBtn.onclick = () => {
-    tasks.splice(tasks.indexOf(task), 1);
-    saveToLocalStorage();
-    renderTasks();
+    openConfirmModal({
+      title: "Delete Task",
+      message: "Are you sure you want to delete this task? This can't be undone.",
+      onConfirm: () => {
+        tasks.splice(tasks.indexOf(task), 1);
+        saveToLocalStorage();
+        renderTasks();
+      }
+    });
   };
 
   // Created date badge
@@ -205,7 +281,8 @@ function buildTaskItem(task) {
       month: "short",
       year: "numeric",
       hour: "numeric",
-      minute: "2-digit"
+      minute: "2-digit",
+      hour12: use12Hour()
     });
     createdBadge.innerText = formatted;
   } else {
@@ -250,7 +327,7 @@ function renderPaginationControls(key, totalItems, page, totalPages) {
   if (nextBtn) nextBtn.disabled = page >= totalPages;
 }
 
-function populateList(ulElement, filter, searchText, dateRange = null, dateField = null, paginationKey = null) {
+function populateList(ulElement, filter, searchText, dateRange = null, dateField = null, paginationKey = null, priorityFilter = "") {
   if (!ulElement) return;
   ulElement.innerHTML = "";
 
@@ -281,6 +358,20 @@ function populateList(ulElement, filter, searchText, dateRange = null, dateField
     filtered = filtered.filter(t => t.text.toLowerCase().includes(searchText.toLowerCase()));
   }
 
+  // Filter by Priority — applies to any list (Total Tasks, Completed,
+  // Pending, Overdue) when a priority is selected in that tab's
+  // "Filter by Priority" dropdown.
+  if (priorityFilter === "high" || priorityFilter === "medium" || priorityFilter === "low" || priorityFilter === "none") {
+    const matchesPriority = (t) => (priorityFilter === "none" ? !t.priority : t.priority === priorityFilter);
+    filtered = filtered.filter(matchesPriority);
+  }
+
+  // Total Tasks tab: newest → oldest by default (most recently created task first).
+  if (paginationKey === "totalTasks") {
+    const byCreatedAtDesc = (a, b) => new Date(b.createdAt) - new Date(a.createdAt);
+    filtered = [...filtered].sort(byCreatedAtDesc);
+  }
+
   let itemsToRender = filtered;
 
   if (paginationKey && listPagination[paginationKey]) {
@@ -306,21 +397,24 @@ function populateList(ulElement, filter, searchText, dateRange = null, dateField
 // ── Render ALL tabs at once ────────────────────────────────
 function renderTasks() {
   const totalTasksSearch = totalTasksSearchInput ? totalTasksSearchInput.value : "";
+  const completedSearch  = completedSearchInput  ? completedSearchInput.value  : "";
+  const pendingSearch    = pendingSearchInput    ? pendingSearchInput.value    : "";
+  const overdueSearch    = overdueSearchInput    ? overdueSearchInput.value    : "";
 
   // Dashboard — Recent Activity (last 10 tasks, newest first)
   populateList(taskList, "recent", "");
 
-  // Total Tasks tab (ranged by createdAt, paginated)
-  populateList(totalTaskList, totalTasksFilter, totalTasksSearch, overviewRanges.totalTasks, "createdAt", "totalTasks");
+  // Total Tasks tab (ranged by createdAt, paginated, newest→oldest, optionally filtered by priority)
+  populateList(totalTaskList, totalTasksFilter, totalTasksSearch, overviewRanges.totalTasks, "createdAt", "totalTasks", totalTasksPriorityFilter);
 
-  // Completed tab — always shows only completed (ranged by completedAt, paginated)
-  populateList(completedTaskList, "completed", "", overviewRanges.completed, "completedAt", "completed");
+  // Completed tab — always shows only completed (ranged by completedAt, paginated, searchable, filterable by priority)
+  populateList(completedTaskList, "completed", completedSearch, overviewRanges.completed, "completedAt", "completed", completedPriorityFilter);
 
-  // Pending tab — always shows only pending (ranged by createdAt, paginated)
-  populateList(pendingTaskList, "pending", "", overviewRanges.pending, "createdAt", "pending");
+  // Pending tab — always shows only pending (ranged by createdAt, paginated, searchable, filterable by priority)
+  populateList(pendingTaskList, "pending", pendingSearch, overviewRanges.pending, "createdAt", "pending", pendingPriorityFilter);
 
-  // Overdue tab (ranged by dueDate, paginated)
-  populateList(overdueTaskList, "overdue", "", overviewRanges.overdue, "dueDate", "overdue");
+  // Overdue tab (ranged by dueDate, paginated, searchable, filterable by priority)
+  populateList(overdueTaskList, "overdue", overdueSearch, overviewRanges.overdue, "dueDate", "overdue", overduePriorityFilter);
 
   updateStats();
 }
@@ -357,6 +451,185 @@ function countOverdueInRange(range) {
   }).length;
 }
 
+// ── Static Completed counters (Completed tab) ───────────────
+// These four always reflect "right now" — they deliberately ignore
+// overviewRanges.completed / the Completed tab's range picker, per
+// requirement that they stay fixed regardless of the selected date range.
+function countCompletedToday() {
+  const now = new Date();
+  return tasks.filter(t => {
+    if (!t.completed || !t.completedAt) return false;
+    const d = new Date(t.completedAt);
+    return d.getFullYear() === now.getFullYear() &&
+           d.getMonth() === now.getMonth() &&
+           d.getDate() === now.getDate();
+  }).length;
+}
+
+function countCompletedThisWeek() {
+  const now = new Date();
+  // Monday → Sunday, same convention used by the Daily/Weekly charts.
+  const dayIndex = (now.getDay() + 6) % 7; // Mon=0 ... Sun=6
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - dayIndex);
+  const nextMonday = new Date(monday);
+  nextMonday.setDate(monday.getDate() + 7);
+
+  return tasks.filter(t => {
+    if (!t.completed || !t.completedAt) return false;
+    const d = new Date(t.completedAt);
+    return d >= monday && d < nextMonday;
+  }).length;
+}
+
+function countCompletedThisMonth() {
+  const now = new Date();
+  return tasks.filter(t => {
+    if (!t.completed || !t.completedAt) return false;
+    const d = new Date(t.completedAt);
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }).length;
+}
+
+function countCompletedOnTime() {
+  // "On time" = finished a task that had a due date, at or before that due date.
+  return tasks.filter(t => {
+    if (!t.completed || !t.completedAt || !t.dueDate) return false;
+    return new Date(t.completedAt) <= new Date(t.dueDate);
+  }).length;
+}
+
+// ── Static Pending due-date buckets (Pending tab) ────────────
+// Always based on today's real date — ignore overviewRanges.pending.
+function startOfDay(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function getWeekBounds(referenceDate) {
+  // Monday → next Monday, same convention used by the Daily/Weekly charts.
+  const dayIndex = (referenceDate.getDay() + 6) % 7; // Mon=0 ... Sun=6
+  const monday = startOfDay(referenceDate);
+  monday.setDate(monday.getDate() - dayIndex);
+  const nextMonday = new Date(monday);
+  nextMonday.setDate(monday.getDate() + 7);
+  return { start: monday, end: nextMonday };
+}
+
+function countPendingDueToday() {
+  const today = startOfDay(new Date());
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    const d = startOfDay(t.dueDate);
+    return d.getTime() === today.getTime();
+  }).length;
+}
+
+function countPendingDueTomorrow() {
+  const tomorrow = startOfDay(new Date());
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    const d = startOfDay(t.dueDate);
+    return d.getTime() === tomorrow.getTime();
+  }).length;
+}
+
+function countPendingDueThisWeek() {
+  const { start, end } = getWeekBounds(new Date());
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    const d = startOfDay(t.dueDate);
+    return d >= start && d < end;
+  }).length;
+}
+
+function countPendingDueThisMonth() {
+  // All pending tasks due anywhere in the current calendar month
+  // (this intentionally overlaps with Today/Tomorrow/This Week above).
+  const now = new Date();
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    const d = startOfDay(t.dueDate);
+    return d >= thisMonthStart && d < nextMonthStart;
+  }).length;
+}
+
+function countPendingDueLater() {
+  // Anything due beyond the current calendar month.
+  const now = new Date();
+  const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    const d = startOfDay(t.dueDate);
+    return d >= nextMonthStart;
+  }).length;
+}
+
+function countPendingOverdue() {
+  // Pending tasks whose due date has already passed — pending tasks include overdue ones too.
+  const now = new Date();
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    return new Date(t.dueDate) < now;
+  }).length;
+}
+
+// ── Static Overdue age buckets (Overdue tab) ─────────────────
+// Always based on today's real date — ignore overviewRanges.overdue.
+function countOverdueYesterday() {
+  const now = new Date();
+  const yesterday = startOfDay(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    if (new Date(t.dueDate) >= now) return false; // must actually be overdue
+    const d = startOfDay(t.dueDate);
+    return d.getTime() === yesterday.getTime();
+  }).length;
+}
+
+function countOverdueLastWeek() {
+  const now = new Date();
+  const { start: thisWeekStart } = getWeekBounds(now);
+  const lastWeekStart = new Date(thisWeekStart);
+  lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    if (new Date(t.dueDate) >= now) return false;
+    const d = startOfDay(t.dueDate);
+    return d >= lastWeekStart && d < thisWeekStart;
+  }).length;
+}
+
+function countOverdueLastMonth() {
+  const now = new Date();
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    if (new Date(t.dueDate) >= now) return false;
+    const d = startOfDay(t.dueDate);
+    return d >= lastMonthStart && d < thisMonthStart;
+  }).length;
+}
+
+function countOverdueMonthAgoPlus() {
+  // Anything overdue from before the "last month" window above.
+  const now = new Date();
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    if (new Date(t.dueDate) >= now) return false;
+    const d = startOfDay(t.dueDate);
+    return d < lastMonthStart;
+  }).length;
+}
+
 function updateStats() {
   const total       = tasks.length;
   const completed   = tasks.filter(t => t.completed).length;
@@ -388,6 +661,43 @@ if (pendingCountTab)
     pendingCountTab.textContent = countPendingInRange(overviewRanges.pending);
   if (highPriorityCountEl) highPriorityCountEl.textContent = highPending;
 
+  // Static Completed-tab counters — intentionally NOT range-filtered.
+  const completedTodayEl     = document.getElementById("completedTodayCount");
+  const completedThisWeekEl  = document.getElementById("completedThisWeekCount");
+  const completedThisMonthEl = document.getElementById("completedThisMonthCount");
+  const completedOnTimeEl    = document.getElementById("completedOnTimeCount");
+
+  if (completedTodayEl)     completedTodayEl.textContent     = countCompletedToday();
+  if (completedThisWeekEl)  completedThisWeekEl.textContent  = countCompletedThisWeek();
+  if (completedThisMonthEl) completedThisMonthEl.textContent = countCompletedThisMonth();
+  if (completedOnTimeEl)    completedOnTimeEl.textContent    = countCompletedOnTime();
+
+  // Static Pending-tab counters — intentionally NOT range-filtered.
+  const pendingOverdueEl      = document.getElementById("pendingOverdueCount");
+  const pendingDueTodayEl     = document.getElementById("pendingDueTodayCount");
+  const pendingDueTomorrowEl  = document.getElementById("pendingDueTomorrowCount");
+  const pendingDueThisWeekEl  = document.getElementById("pendingDueThisWeekCount");
+  const pendingDueThisMonthEl = document.getElementById("pendingDueThisMonthCount");
+  const pendingDueLaterEl     = document.getElementById("pendingDueLaterCount");
+
+  if (pendingOverdueEl)      pendingOverdueEl.textContent      = countPendingOverdue();
+  if (pendingDueTodayEl)     pendingDueTodayEl.textContent     = countPendingDueToday();
+  if (pendingDueTomorrowEl)  pendingDueTomorrowEl.textContent  = countPendingDueTomorrow();
+  if (pendingDueThisWeekEl)  pendingDueThisWeekEl.textContent  = countPendingDueThisWeek();
+  if (pendingDueThisMonthEl) pendingDueThisMonthEl.textContent = countPendingDueThisMonth();
+  if (pendingDueLaterEl)     pendingDueLaterEl.textContent     = countPendingDueLater();
+
+  // Static Overdue-tab counters — intentionally NOT range-filtered.
+  const overdueYesterdayEl    = document.getElementById("overdueYesterdayCount");
+  const overdueLastWeekEl     = document.getElementById("overdueLastWeekCount");
+  const overdueLastMonthEl    = document.getElementById("overdueLastMonthCount");
+  const overdueMonthAgoPlusEl = document.getElementById("overdueMonthAgoPlusCount");
+
+  if (overdueYesterdayEl)    overdueYesterdayEl.textContent    = countOverdueYesterday();
+  if (overdueLastWeekEl)     overdueLastWeekEl.textContent     = countOverdueLastWeek();
+  if (overdueLastMonthEl)    overdueLastMonthEl.textContent    = countOverdueLastMonth();
+  if (overdueMonthAgoPlusEl) overdueMonthAgoPlusEl.textContent = countOverdueMonthAgoPlus();
+
 
 
 
@@ -400,13 +710,75 @@ if (pendingCountTab)
   const totalCountAltEl = document.getElementById("totalCountAlt");
   if (totalCountAltEl) totalCountAltEl.textContent = countTotalInRange(overviewRanges.totalTasks);
 
+  // Priority breakdown (High/Medium/Low/No Priority) alongside the Total
+  // Tasks card — counted over the same date range as that card (createdAt).
+  const totalTasksRange = overviewRanges.totalTasks;
+  const countByPriorityInRange = (priority, range) => tasks.filter(t => {
+    const matches = priority === "none" ? !t.priority : t.priority === priority;
+    return matches && isWithinRange(t.createdAt, range);
+  }).length;
+
+  const highPriorityBreakdownEl   = document.getElementById("totalTasksHighPriorityCount");
+  const mediumPriorityBreakdownEl = document.getElementById("totalTasksMediumPriorityCount");
+  const lowPriorityBreakdownEl    = document.getElementById("totalTasksLowPriorityCount");
+  const noPriorityBreakdownEl     = document.getElementById("totalTasksNoPriorityCount");
+
+  if (highPriorityBreakdownEl)   highPriorityBreakdownEl.textContent   = countByPriorityInRange("high", totalTasksRange);
+  if (mediumPriorityBreakdownEl) mediumPriorityBreakdownEl.textContent = countByPriorityInRange("medium", totalTasksRange);
+  if (lowPriorityBreakdownEl)    lowPriorityBreakdownEl.textContent    = countByPriorityInRange("low", totalTasksRange);
+  if (noPriorityBreakdownEl)     noPriorityBreakdownEl.textContent     = countByPriorityInRange("none", totalTasksRange);
+
+  // Priority breakdown for the Completed / Pending / Overdue tabs — each
+  // counted within that tab's own status filter + date range.
+  const countByPriorityForStatus = (status, priority, range) => tasks.filter(t => {
+    const matchesPriority = priority === "none" ? !t.priority : t.priority === priority;
+    if (!matchesPriority) return false;
+
+    if (status === "completed") return t.completed && isWithinRange(t.completedAt, range);
+    if (status === "pending")   return !t.completed && isWithinRange(t.createdAt, range);
+    if (status === "overdue") {
+      if (t.completed || !t.dueDate) return false;
+      if (new Date(t.dueDate) >= new Date()) return false;
+      return isWithinRange(t.dueDate, range);
+    }
+    return false;
+  }).length;
+
+  const setBreakdown = (prefix, status, range) => {
+    const highEl   = document.getElementById(`${prefix}PriorityHighCount`);
+    const mediumEl = document.getElementById(`${prefix}PriorityMediumCount`);
+    const lowEl    = document.getElementById(`${prefix}PriorityLowCount`);
+    const noneEl   = document.getElementById(`${prefix}PriorityNoneCount`);
+
+    if (highEl)   highEl.textContent   = countByPriorityForStatus(status, "high", range);
+    if (mediumEl) mediumEl.textContent = countByPriorityForStatus(status, "medium", range);
+    if (lowEl)    lowEl.textContent    = countByPriorityForStatus(status, "low", range);
+    if (noneEl)   noneEl.textContent   = countByPriorityForStatus(status, "none", range);
+  };
+
+  setBreakdown("completed", "completed", overviewRanges.completed);
+  setBreakdown("pending", "pending", overviewRanges.pending);
+  setBreakdown("overdue", "overdue", overviewRanges.overdue);
+
   const pct = (n) => total > 0 ? Math.round((n / total) * 100) : 0;
 
   const completedPercentEl = document.getElementById("completedPercent");
   const pendingPercentEl   = document.getElementById("pendingPercent");
 
-  if (completedPercentEl) completedPercentEl.textContent = `${pct(completed)}% of total`;
-  if (pendingPercentEl)   pendingPercentEl.textContent   = `${pct(pending)}% of total`;
+  if (completedPercentEl) completedPercentEl.innerHTML = `<strong>${pct(completed)}%</strong> of total`;
+  if (pendingPercentEl)   pendingPercentEl.innerHTML   = `<strong>${pct(pending)}%</strong> of total`;
+
+  // Dashboard cards (separate ids from the Completed / Pending tabs)
+  const completedPercentAltEl = document.getElementById("completedPercentAlt");
+  const pendingPercentAltEl   = document.getElementById("pendingPercentAlt");
+  const overdueCountDashEl    = document.getElementById("overdueCountDashboard");
+  const overduePercentAltEl   = document.getElementById("overduePercentAlt");
+  const overdueAll            = countPendingOverdue();
+
+  if (completedPercentAltEl) completedPercentAltEl.textContent = `${pct(completed)}% of total`;
+  if (pendingPercentAltEl)   pendingPercentAltEl.textContent   = `${pct(pending)}% of total`;
+  if (overdueCountDashEl)    overdueCountDashEl.textContent    = overdueAll;
+  if (overduePercentAltEl)   overduePercentAltEl.textContent   = `${pct(overdueAll)}% of total`;
 
   const overdue = tasks.filter(task => {
 
@@ -437,6 +809,426 @@ updateHeatmap();
 refreshBestDay();
 updateRecentActivity();
 updateCompletionRate();
+updateInfoCardBars();
+updateDashboardCharts();
+}
+
+// ── Info card bars ───────────────────────────────────────────
+// Fills the progress bars inside the redesigned info cards:
+//  • "Tasks by Priority" rows: each bar = that priority's share of the card's total
+//  • "x% of total" bars: width taken from the percentage text (e.g. "22% of total")
+function updateInfoCardBars() {
+  document.querySelectorAll(".info-card-priority").forEach(card => {
+    const rows = [...card.querySelectorAll(".info-row")];
+    const counts = rows.map(r => parseInt(r.querySelector(".info-row-count").textContent, 10) || 0);
+    const sum = counts.reduce((a, b) => a + b, 0);
+    rows.forEach((row, i) => {
+      const fill = row.querySelector(".info-bar-fill");
+      if (fill) fill.style.width = sum > 0 ? `${Math.round((counts[i] / sum) * 100)}%` : "0%";
+    });
+  });
+
+  document.querySelectorAll(".info-percent-bar-fill").forEach(fill => {
+    const source = document.getElementById(fill.dataset.source);
+    const pct = source ? (parseInt(source.textContent, 10) || 0) : 0;
+    fill.style.width = `${pct}%`;
+  });
+}
+
+// ── Dashboard charts ─────────────────────────────────────────
+// Five charts shown on the Dashboard. They use their own canvases (dash*)
+// and always show ALL-TIME / current-period data (no range pickers):
+//  Task Status · Daily Completion Trend (this week) · Weekly Trend (last 5 weeks)
+//  Priority Distribution · Monthly Trend (last 6 months)
+
+// Draws each point's value above the point on line charts.
+const dashValueLabelsPlugin = {
+  id: "dashValueLabels",
+  afterDatasetsDraw(chart) {
+    const ctx = chart.ctx;
+    chart.data.datasets.forEach((ds, i) => {
+      const meta = chart.getDatasetMeta(i);
+      ctx.save();
+      ctx.font = "600 11px Poppins, sans-serif";
+      ctx.fillStyle = ds.borderColor;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      meta.data.forEach((point, idx) => ctx.fillText(ds.data[idx], point.x, point.y - 8));
+      ctx.restore();
+    });
+  }
+};
+
+function upsertDashLine(chart, canvasId, labels, data, color, fillColor, tooltipLabel) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return chart; // tab markup not present, skip safely
+
+  if (chart) {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = data;
+    chart.update();
+    return chart;
+  }
+
+  return new Chart(canvas.getContext("2d"), {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: tooltipLabel,
+        data: data,
+        borderColor: color,
+        backgroundColor: fillColor,
+        pointBackgroundColor: color,
+        pointRadius: 4,
+        tension: 0.4,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { top: 18 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (context) => `${tooltipLabel}: ${context.raw}` } }
+      },
+      scales: {
+        y: { beginAtZero: true, grace: "10%", ticks: { precision: 0 } },
+        x: { grid: { display: false } }
+      }
+    },
+    plugins: [dashValueLabelsPlugin]
+  });
+}
+
+function upsertDashDonut(chart, canvasId, labels, data, colors) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return chart;
+
+  if (chart) {
+    chart.data.datasets[0].data = data;
+    chart.update();
+    return chart;
+  }
+
+  return new Chart(canvas.getContext("2d"), {
+    type: "doughnut",
+    data: {
+      labels: labels,
+      datasets: [{ data: data, backgroundColor: colors, borderWidth: 0, spacing: 2 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: "64%",
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const sum = context.dataset.data.reduce((a, b) => a + b, 0);
+              const pct = sum > 0 ? Math.round((context.raw / sum) * 1000) / 10 : 0;
+              return `${context.label}: ${context.raw} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+// Legend to the right of a donut: dot · label · "69.5% (89)"
+function renderDashLegend(listEl, items, total) {
+  if (!listEl) return;
+  listEl.innerHTML = "";
+  items.forEach(item => {
+    const li = document.createElement("li");
+
+    const dot = document.createElement("span");
+    dot.classList.add("info-dot");
+    dot.style.background = item.color;
+
+    const label = document.createElement("span");
+    label.classList.add("dash-legend-label");
+    label.textContent = item.label;
+
+    const value = document.createElement("span");
+    value.classList.add("dash-legend-value");
+    const pct = total > 0 ? Math.round((item.count / total) * 1000) / 10 : 0;
+    value.textContent = `${pct}% (${item.count})`;
+
+    li.appendChild(dot);
+    li.appendChild(label);
+    li.appendChild(value);
+    listEl.appendChild(li);
+  });
+}
+
+// 1) Task Status — all tasks. The three slices don't overlap, so they add up
+//    to the total shown in the centre (Pending here = pending AND not overdue).
+function updateDashTaskStatusChart() {
+  const total = tasks.length;
+  const completed = tasks.filter(t => t.completed).length;
+  const overdue = countPendingOverdue();
+  const pending = total - completed - overdue;
+
+  const items = [
+    { label: "Completed",           color: "#28a745", count: completed },
+    { label: "Pending (not overdue)", color: "#ffc107", count: pending },
+    { label: "Overdue",             color: "#dc3545", count: overdue }
+  ];
+
+  dashTaskStatusChart = upsertDashDonut(
+    dashTaskStatusChart, "dashTaskStatusChart",
+    items.map(i => i.label), items.map(i => i.count), items.map(i => i.color)
+  );
+
+  const totalEl = document.getElementById("dashTaskStatusTotal");
+  if (totalEl) totalEl.textContent = total;
+  renderDashLegend(document.getElementById("dashTaskStatusLegend"), items, total);
+}
+
+// 2) Daily Completion Trend — this week (Mon → Sun), same data as the
+//    Daily Completion chart in Performance Charts.
+function updateDashDailyChart() {
+  dashDailyChart = upsertDashLine(
+    dashDailyChart, "dashDailyChart",
+    ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    computeWeeklyCompletionCounts(),
+    "#8b5cf6", "rgba(139, 92, 246, 0.15)", "Completed"
+  );
+}
+
+// 3) Weekly Trend — tasks completed in each of the last 5 weeks (Mon → Sun),
+//    the current week is the last point.
+function computeDashWeeklyTrend(weeksCount = 5) {
+  const thisWeekStart = getStartOfWeek(new Date());
+  const monthShort = (d) => d.toLocaleDateString("en-US", { month: "short" });
+  const labels = [];
+  const data = [];
+
+  for (let i = weeksCount - 1; i >= 0; i--) {
+    const start = new Date(thisWeekStart);
+    start.setDate(start.getDate() - i * 7);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const nextWeekStart = new Date(start);
+    nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+
+    labels.push(
+      monthShort(start) === monthShort(end)
+        ? `${monthShort(start)} ${start.getDate()} - ${end.getDate()}`
+        : `${monthShort(start)} ${start.getDate()} - ${monthShort(end)} ${end.getDate()}`
+    );
+
+    data.push(tasks.filter(t => {
+      if (!t.completed || !t.completedAt) return false;
+      const d = new Date(t.completedAt);
+      return d >= start && d < nextWeekStart;
+    }).length);
+  }
+
+  return { labels, data };
+}
+
+function updateDashWeeklyChart() {
+  const { labels, data } = computeDashWeeklyTrend(5);
+  dashWeeklyChart = upsertDashLine(
+    dashWeeklyChart, "dashWeeklyChart", labels, data,
+    "#3b82f6", "rgba(59, 130, 246, 0.15)", "Completed"
+  );
+}
+
+// 4) Priority Distribution — all tasks by priority (No Priority included so the
+//    centre total matches the total number of tasks).
+function updateDashPriorityChart() {
+  const total = tasks.length;
+  const countOf = (p) => tasks.filter(t => (p === "none" ? !t.priority : t.priority === p)).length;
+
+  const items = [
+    { label: "High",        color: "#dc3545", count: countOf("high") },
+    { label: "Medium",      color: "#fd7e14", count: countOf("medium") },
+    { label: "Low",         color: "#28a745", count: countOf("low") },
+    { label: "No Priority", color: "#9aa0a6", count: countOf("none") }
+  ];
+
+  dashPriorityChart = upsertDashDonut(
+    dashPriorityChart, "dashPriorityChart",
+    items.map(i => i.label), items.map(i => i.count), items.map(i => i.color)
+  );
+
+  const totalEl = document.getElementById("dashPriorityTotal");
+  if (totalEl) totalEl.textContent = total;
+  renderDashLegend(document.getElementById("dashPriorityLegend"), items, total);
+}
+
+// 5) Monthly Trend — tasks completed in each of the last 6 months
+//    (current month is the last point).
+function updateDashMonthlyChart() {
+  const now = new Date();
+  const labels = [];
+  const data = [];
+
+  for (let i = 5; i >= 0; i--) {
+    const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    labels.push(monthDate.toLocaleDateString("en-US", { month: "short" }));
+    data.push(tasks.filter(t => {
+      if (!t.completed || !t.completedAt) return false;
+      const d = new Date(t.completedAt);
+      return d.getFullYear() === monthDate.getFullYear() && d.getMonth() === monthDate.getMonth();
+    }).length);
+  }
+
+  dashMonthlyChart = upsertDashLine(
+    dashMonthlyChart, "dashMonthlyChart", labels, data,
+    "#22a447", "rgba(34, 164, 71, 0.15)", "Completed"
+  );
+}
+
+function updateDashboardCharts() {
+  updateDashTaskStatusChart();
+  updateDashDailyChart();
+  updateDashWeeklyChart();
+  updateDashPriorityChart();
+  updateDashMonthlyChart();
+  updateDashHeatmap();
+  updateDashRecentActivity();
+}
+
+// 6) Productivity Heatmap — GitHub-style grid: one column per week, one row per
+//    weekday (Mon → Sun), covering the last 6 months. Reuses the Heatmap tab's
+//    helpers (generateDateRangeArray / groupCompletedTasksByDate / getColorLevel).
+function updateDashHeatmap() {
+  const grid = document.getElementById("dashHeatmapGrid");
+  if (!grid) return; // tab markup not present, skip safely
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const sixMonthsAgo = new Date(today);
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+  const start = getStartOfWeek(sixMonthsAgo); // begins on a Monday, so index % 7 = weekday row
+  const dates = generateDateRangeArray(start, today);
+  const counts = groupCompletedTasksByDate(start, today);
+  const weekCount = Math.ceil(dates.length / 7);
+
+  grid.innerHTML = "";
+  grid.style.gridTemplateColumns = `34px repeat(${weekCount}, 16px)`;
+
+  // Weekday labels (column 1)
+  ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].forEach((day, row) => {
+    const label = document.createElement("span");
+    label.classList.add("dash-hm-daylabel");
+    label.textContent = day;
+    label.style.gridRow = row + 2;
+    grid.appendChild(label);
+  });
+
+  // Month labels (row 1): placed above the first week of each month.
+  // A label is skipped if the next month starts within 3 columns (would overlap).
+  const monthStarts = [];
+  let previousMonth = -1;
+  for (let w = 0; w < weekCount; w++) {
+    const month = dates[w * 7].getMonth();
+    if (month !== previousMonth) {
+      monthStarts.push({ col: w + 2, label: dates[w * 7].toLocaleDateString("en-US", { month: "short" }) });
+      previousMonth = month;
+    }
+  }
+  monthStarts.forEach((m, i) => {
+    const next = monthStarts[i + 1];
+    if (next && next.col - m.col < 3) return;
+    const label = document.createElement("span");
+    label.classList.add("dash-hm-monthlabel");
+    label.textContent = m.label;
+    label.style.gridRow = 1;
+    label.style.gridColumn = `${m.col} / span 3`;
+    grid.appendChild(label);
+  });
+
+  // Day cells
+  dates.forEach((date, i) => {
+    const count = counts[formatHeatmapDateKey(date)] || 0;
+    const cell = document.createElement("div");
+    cell.classList.add("dash-hm-cell", `lvl-${getColorLevel(count).level}`);
+    cell.style.gridRow = (i % 7) + 2;
+    cell.style.gridColumn = Math.floor(i / 7) + 2;
+    const dateLabel = date.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+    cell.title = `${dateLabel}\nCompleted Tasks: ${count}`;
+    grid.appendChild(cell);
+  });
+}
+
+// 7) Recent Activity — Recently Added / Recently Completed / Upcoming Deadlines
+//    (4 items each). Same rules as the Recent Activity tabs; "View all" buttons
+//    use data-tab so the existing tab switching handles them.
+function renderDashActivityList(listId, items, emptyMessage, metaFn) {
+  const listEl = document.getElementById(listId);
+  if (!listEl) return;
+  listEl.innerHTML = "";
+
+  if (items.length === 0) {
+    const empty = document.createElement("li");
+    empty.classList.add("dash-act-empty");
+    empty.textContent = emptyMessage;
+    listEl.appendChild(empty);
+    return;
+  }
+
+  items.forEach(task => {
+    const li = document.createElement("li");
+    li.classList.add("dash-act-item");
+
+    const name = document.createElement("span");
+    name.classList.add("dash-act-name");
+    name.textContent = task.text;
+    name.title = task.text;
+
+    const badge = document.createElement("span");
+    badge.classList.add("priority-badge", task.priority || "no-priority");
+    badge.textContent = task.priority
+      ? task.priority.charAt(0).toUpperCase() + task.priority.slice(1)
+      : "None";
+
+    const time = document.createElement("span");
+    time.classList.add("dash-act-time");
+    time.textContent = metaFn(task);
+
+    li.appendChild(name);
+    li.appendChild(badge);
+    li.appendChild(time);
+    listEl.appendChild(li);
+  });
+}
+
+function updateDashRecentActivity() {
+  const LIMIT = 4;
+
+  const added = [...tasks]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, LIMIT);
+
+  const completed = tasks
+    .filter(t => t.completed && t.completedAt)
+    .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+    .slice(0, LIMIT);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const upcoming = tasks
+    .filter(t => {
+      if (t.completed || !t.dueDate) return false;
+      const due = new Date(t.dueDate);
+      due.setHours(0, 0, 0, 0);
+      return due >= today;
+    })
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+    .slice(0, LIMIT);
+
+  renderDashActivityList("dashRecentlyAddedList", added, "No tasks added yet.", t => formatRelativeTime(t.createdAt));
+  renderDashActivityList("dashRecentlyCompletedList", completed, "No completed tasks yet.", t => formatRelativeTime(t.completedAt));
+  renderDashActivityList("dashUpcomingDeadlinesList", upcoming, "No upcoming deadlines.", t => formatDeadlineStatus(t.dueDate));
 }
 
 function updateTaskStatusChart(completed, pending, overdue) {
@@ -1311,14 +2103,13 @@ function renderActivityEmptyState(listEl, message) {
   listEl.appendChild(li);
 }
 
-// FEATURE 1 — Recently Added: sorted by createdAt, newest first, top 5.
+// FEATURE 1 — Recently Added: sorted by createdAt, newest first, all tasks.
 function renderRecentlyAdded() {
   const listEl = document.getElementById("recentlyAddedList");
   if (!listEl) return;
 
   const items = [...tasks]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 5);
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   if (items.length === 0) {
     renderActivityEmptyState(listEl, "No tasks added yet.");
@@ -1334,15 +2125,14 @@ function renderRecentlyAdded() {
 }
 
 // FEATURE 2 — Recently Completed: completed tasks only, sorted by
-// completedAt, newest first, top 5.
+// completedAt, newest first, all tasks.
 function renderRecentlyCompleted() {
   const listEl = document.getElementById("recentlyCompletedList");
   if (!listEl) return;
 
   const items = tasks
     .filter(t => t.completed && t.completedAt)
-    .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
-    .slice(0, 5);
+    .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
 
   if (items.length === 0) {
     renderActivityEmptyState(listEl, "No completed tasks yet.");
@@ -1358,7 +2148,7 @@ function renderRecentlyCompleted() {
 }
 
 // FEATURE 3 — Upcoming Deadlines: pending tasks with a dueDate that is
-// today or later, sorted nearest-first, top 5.
+// today or later, sorted nearest-first, all of them.
 function renderUpcomingDeadlines() {
   const listEl = document.getElementById("upcomingDeadlinesList");
   if (!listEl) return;
@@ -1373,8 +2163,7 @@ function renderUpcomingDeadlines() {
       due.setHours(0, 0, 0, 0);
       return due >= today;
     })
-    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
-    .slice(0, 5);
+    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
 
   if (items.length === 0) {
     renderActivityEmptyState(listEl, "No upcoming deadlines.");
@@ -1805,26 +2594,25 @@ if (heatmapCustomRangeBtn) {
   });
 }
 
-// ── Total Tasks tab filter buttons ─────────────────────────
-const totalTasksAllBtn       = document.getElementById("totalTasksAllBtn");
-const totalTasksCompletedBtn = document.getElementById("totalTasksCompletedBtn");
-const totalTasksPendingBtn   = document.getElementById("totalTasksPendingBtn");
+// ── Total Tasks: filter by actions (All / Completed / Pending / Overdue) ──
+initCustomSelect(
+  document.getElementById("totalTasksActionFilterDropdown"),
+  (value) => {
+    totalTasksFilter = value || "all";
+    listPagination.totalTasks.page = 1;
+    renderTasks();
+  }
+);
 
-if (totalTasksAllBtn) {
-  totalTasksAllBtn.addEventListener("click", () => {
-    totalTasksFilter = "all"; listPagination.totalTasks.page = 1; renderTasks();
-  });
-}
-if (totalTasksCompletedBtn) {
-  totalTasksCompletedBtn.addEventListener("click", () => {
-    totalTasksFilter = "completed"; listPagination.totalTasks.page = 1; renderTasks();
-  });
-}
-if (totalTasksPendingBtn) {
-  totalTasksPendingBtn.addEventListener("click", () => {
-    totalTasksFilter = "pending"; listPagination.totalTasks.page = 1; renderTasks();
-  });
-}
+// ── Total Tasks: filter by priority ─────────────────────────
+initCustomSelect(
+  document.getElementById("totalTasksPriorityFilterDropdown"),
+  (value) => {
+    totalTasksPriorityFilter = value;
+    listPagination.totalTasks.page = 1;
+    renderTasks();
+  }
+);
 
 // ── Total Tasks search ──────────────────────────────────────
 if (totalTasksSearchInput) {
@@ -1834,10 +2622,63 @@ if (totalTasksSearchInput) {
   });
 }
 
-flatpickr("#dueDate", {
-  enableTime: true,
-  dateFormat: "d M Y h:i K"
-});
+// ── Completed / Pending / Overdue: filter by priority ───────
+initCustomSelect(
+  document.getElementById("completedPriorityFilterDropdown"),
+  (value) => {
+    completedPriorityFilter = value;
+    listPagination.completed.page = 1;
+    renderTasks();
+  }
+);
+
+initCustomSelect(
+  document.getElementById("pendingPriorityFilterDropdown"),
+  (value) => {
+    pendingPriorityFilter = value;
+    listPagination.pending.page = 1;
+    renderTasks();
+  }
+);
+
+initCustomSelect(
+  document.getElementById("overduePriorityFilterDropdown"),
+  (value) => {
+    overduePriorityFilter = value;
+    listPagination.overdue.page = 1;
+    renderTasks();
+  }
+);
+
+// ── Completed / Pending / Overdue: search ────────────────────
+if (completedSearchInput) {
+  completedSearchInput.addEventListener("input", () => {
+    listPagination.completed.page = 1;
+    renderTasks();
+  });
+}
+
+if (pendingSearchInput) {
+  pendingSearchInput.addEventListener("input", () => {
+    listPagination.pending.page = 1;
+    renderTasks();
+  });
+}
+
+if (overdueSearchInput) {
+  overdueSearchInput.addEventListener("input", () => {
+    listPagination.overdue.page = 1;
+    renderTasks();
+  });
+}
+
+if (dueDateInput) {
+  flatpickr("#dueDate", {
+    enableTime: true,
+    time_24hr: !use12Hour(),
+    dateFormat: getDueDateFormat()
+  });
+}
 
 // ── Sidebar: Accordion groups ──────────────────────────────
 const accordionGroups = document.querySelectorAll(".accordion-group");
@@ -1861,6 +2702,8 @@ const allTabSections = document.querySelectorAll(".tab-section");
 
 function activateTab(tabName) {
   localStorage.setItem("activeTab", tabName); 
+  // Top bar title follows the active section (greeting on Dashboard)
+  if (typeof window.renderTopbarGreeting === "function") window.renderTopbarGreeting();
   // Switch visible section
   allTabSections.forEach(section => section.classList.remove("active"));
   const target = document.getElementById(`tab-${tabName}`);
@@ -1897,6 +2740,10 @@ function activateTab(tabName) {
   if (tabName === "monthly-trend" && monthlyTrendChart) {
     monthlyTrendChart.resize();
   }
+  if (tabName === "dashboard") {
+    [dashTaskStatusChart, dashDailyChart, dashWeeklyChart, dashPriorityChart, dashMonthlyChart]
+      .forEach(c => { if (c) c.resize(); });
+  }
 }
 
 allTabTriggers.forEach(trigger => {
@@ -1911,8 +2758,611 @@ if (viewAllBtn) {
   viewAllBtn.addEventListener("click", () => activateTab("total-tasks"));
 }
 
+// ── Theme: dark / light toggle ───────────────────────────────
+const themeToggleBtn = document.getElementById("themeToggleBtn");
+const themeToggleIcon = themeToggleBtn ? themeToggleBtn.querySelector("i") : null;
+
+function applyTheme(theme) {
+  if (theme === "dark") {
+    document.documentElement.setAttribute("data-theme", "dark");
+    if (themeToggleIcon) {
+      themeToggleIcon.classList.remove("fa-moon");
+      themeToggleIcon.classList.add("fa-sun");
+    }
+    if (themeToggleBtn) themeToggleBtn.title = "Switch to light theme";
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+    if (themeToggleIcon) {
+      themeToggleIcon.classList.remove("fa-sun");
+      themeToggleIcon.classList.add("fa-moon");
+    }
+    if (themeToggleBtn) themeToggleBtn.title = "Switch to dark theme";
+  }
+}
+
+function getPreferredTheme() {
+  const saved = localStorage.getItem("theme");
+  if (saved === "dark" || saved === "light") return saved;
+  // Fall back to the user's OS-level preference the first time they visit
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+applyTheme(getPreferredTheme());
+
+if (themeToggleBtn) {
+  themeToggleBtn.addEventListener("click", () => {
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    const nextTheme = isDark ? "light" : "dark";
+    localStorage.setItem("theme", nextTheme);
+    applyTheme(nextTheme);
+  });
+}
+
+// ── Confirm Modal (mark-as-incomplete / delete) ─────────────
+const confirmModalOverlay = document.getElementById("confirmModalOverlay");
+const confirmModalTitle   = document.getElementById("confirmModalTitle");
+const confirmModalMessage = document.getElementById("confirmModalMessage");
+const confirmModalYesBtn  = document.getElementById("confirmModalYesBtn");
+const confirmModalNoBtn   = document.getElementById("confirmModalNoBtn");
+let pendingConfirmAction = null;
+
+function openConfirmModal({ title = "Are you sure?", message = "", onConfirm = null, onCancel = null }) {
+  if (!confirmModalOverlay) return;
+  if (confirmModalTitle) confirmModalTitle.textContent = title;
+  if (confirmModalMessage) confirmModalMessage.textContent = message;
+  pendingConfirmAction = { onConfirm, onCancel };
+  confirmModalOverlay.classList.add("open");
+}
+
+function closeConfirmModal() {
+  if (confirmModalOverlay) confirmModalOverlay.classList.remove("open");
+  pendingConfirmAction = null;
+}
+
+if (confirmModalYesBtn) {
+  confirmModalYesBtn.addEventListener("click", () => {
+    const action = pendingConfirmAction;
+    closeConfirmModal();
+    if (action && typeof action.onConfirm === "function") action.onConfirm();
+  });
+}
+
+if (confirmModalNoBtn) {
+  confirmModalNoBtn.addEventListener("click", () => {
+    const action = pendingConfirmAction;
+    closeConfirmModal();
+    if (action && typeof action.onCancel === "function") action.onCancel();
+  });
+}
+
+if (confirmModalOverlay) {
+  confirmModalOverlay.addEventListener("click", (e) => {
+    if (e.target !== confirmModalOverlay) return;
+    const action = pendingConfirmAction;
+    closeConfirmModal();
+    if (action && typeof action.onCancel === "function") action.onCancel();
+  });
+}
+
+// ── Edit Task Modal ──────────────────────────────────────────
+const editTaskModalOverlay = document.getElementById("editTaskModalOverlay");
+const editTaskTextInput    = document.getElementById("editTaskText");
+const editTaskDueDateInput = document.getElementById("editTaskDueDate");
+const editTaskSaveBtn      = document.getElementById("editTaskSaveBtn");
+const editTaskCancelBtn    = document.getElementById("editTaskCancelBtn");
+let taskBeingEdited = null;
+let editTaskPriorityValue = "";
+let editTaskDueDatePicker = null;
+
+const editTaskPriorityLabels = { "": "No Priority", high: "High", medium: "Medium", low: "Low" };
+const editTaskPriorityDropdown = initCustomSelect(
+  document.getElementById("editTaskPriorityDropdown"),
+  (value) => { editTaskPriorityValue = value; }
+);
+
+if (editTaskDueDateInput) {
+  editTaskDueDatePicker = flatpickr(editTaskDueDateInput, {
+    enableTime: true,
+    time_24hr: !use12Hour(),
+    dateFormat: getDueDateFormat()
+  });
+}
+
+function openEditTaskModal(task) {
+  if (!editTaskModalOverlay) return;
+  taskBeingEdited = task;
+
+  if (editTaskTextInput) editTaskTextInput.value = task.text;
+
+  editTaskPriorityValue = task.priority || "";
+  if (editTaskPriorityDropdown) {
+    editTaskPriorityDropdown.setValue(editTaskPriorityValue, editTaskPriorityLabels[editTaskPriorityValue] || "No Priority");
+  }
+
+  if (editTaskDueDatePicker) {
+    if (task.dueDate) editTaskDueDatePicker.setDate(new Date(task.dueDate), false);
+    else editTaskDueDatePicker.clear();
+  }
+
+  editTaskModalOverlay.classList.add("open");
+}
+
+function closeEditTaskModal() {
+  if (editTaskModalOverlay) editTaskModalOverlay.classList.remove("open");
+  taskBeingEdited = null;
+}
+
+if (editTaskSaveBtn) {
+  editTaskSaveBtn.addEventListener("click", () => {
+    if (!taskBeingEdited) return;
+
+    const newText = editTaskTextInput ? editTaskTextInput.value.trim() : "";
+    if (newText === "") { alert("Please enter a task"); return; }
+
+    taskBeingEdited.text = newText;
+    taskBeingEdited.priority = editTaskPriorityValue;
+    taskBeingEdited.dueDate = editTaskDueDateInput ? editTaskDueDateInput.value : "";
+
+    saveToLocalStorage();
+    renderTasks();
+    closeEditTaskModal();
+  });
+}
+
+if (editTaskCancelBtn) {
+  editTaskCancelBtn.addEventListener("click", closeEditTaskModal);
+}
+
+if (editTaskModalOverlay) {
+  editTaskModalOverlay.addEventListener("click", (e) => {
+    if (e.target === editTaskModalOverlay) closeEditTaskModal();
+  });
+}
+
+// ── Add Task Modal (opened by the top bar "Add Task" button) ──
+const addTaskModalOverlay = document.getElementById("addTaskModalOverlay");
+const addTaskModalTextInput = document.getElementById("addTaskModalText");
+const addTaskModalDueDateInput = document.getElementById("addTaskModalDueDate");
+const addTaskModalSaveBtn = document.getElementById("addTaskModalSaveBtn");
+const addTaskModalCancelBtn = document.getElementById("addTaskModalCancelBtn");
+let addTaskModalPriorityValue = "";
+let addTaskModalDueDatePicker = null;
+
+const addTaskModalPriorityDropdown = initCustomSelect(
+  document.getElementById("addTaskModalPriorityDropdown"),
+  (value) => { addTaskModalPriorityValue = value; }
+);
+
+if (addTaskModalDueDateInput) {
+  addTaskModalDueDatePicker = flatpickr(addTaskModalDueDateInput, {
+    enableTime: true,
+    time_24hr: !use12Hour(),
+    dateFormat: getDueDateFormat()
+  });
+}
+
+function openAddTaskModal() {
+  if (!addTaskModalOverlay) return;
+
+  // Always start with a clean form
+  if (addTaskModalTextInput) addTaskModalTextInput.value = "";
+  addTaskModalPriorityValue = "";
+  if (addTaskModalPriorityDropdown) addTaskModalPriorityDropdown.setValue("", "No Priority");
+  if (addTaskModalDueDatePicker) addTaskModalDueDatePicker.clear();
+
+  addTaskModalOverlay.classList.add("open");
+  setTimeout(() => addTaskModalTextInput && addTaskModalTextInput.focus(), 60);
+}
+
+function closeAddTaskModal() {
+  if (addTaskModalOverlay) addTaskModalOverlay.classList.remove("open");
+}
+
+function saveAddTaskModal() {
+  const taskText = addTaskModalTextInput ? addTaskModalTextInput.value.trim() : "";
+  if (taskText === "") { alert("Please enter a task"); return; }
+
+  tasks.push({
+    text: taskText,
+    completed: false,
+    priority: addTaskModalPriorityValue,
+    dueDate: addTaskModalDueDateInput ? addTaskModalDueDateInput.value : "",
+    createdAt: new Date().toISOString(),
+    completedAt: null
+  });
+  saveToLocalStorage();
+  renderTasks();
+  closeAddTaskModal();
+}
+
+if (addTaskModalSaveBtn) addTaskModalSaveBtn.addEventListener("click", saveAddTaskModal);
+if (addTaskModalCancelBtn) addTaskModalCancelBtn.addEventListener("click", closeAddTaskModal);
+
+if (addTaskModalTextInput) {
+  addTaskModalTextInput.addEventListener("keypress", (e) => { if (e.key === "Enter") saveAddTaskModal(); });
+}
+
+if (addTaskModalOverlay) {
+  addTaskModalOverlay.addEventListener("click", (e) => {
+    if (e.target === addTaskModalOverlay) closeAddTaskModal();
+  });
+}
+
+// Esc closes whichever modal is currently open
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (confirmModalOverlay && confirmModalOverlay.classList.contains("open")) {
+    const action = pendingConfirmAction;
+    closeConfirmModal();
+    if (action && typeof action.onCancel === "function") action.onCancel();
+  } else if (editTaskModalOverlay && editTaskModalOverlay.classList.contains("open")) {
+    closeEditTaskModal();
+  } else if (addTaskModalOverlay && addTaskModalOverlay.classList.contains("open")) {
+    closeAddTaskModal();
+  }
+});
+
+// ── Profile tab ───────────────────────────────────────────────
+(function initProfileTab() {
+  const form = document.getElementById("profileForm");
+  if (!form) return; // tab markup not present, skip safely
+
+  const fullNameInput   = document.getElementById("profileFullName");
+  const usernameInput   = document.getElementById("profileUsername");
+  const professionInput = document.getElementById("profileProfession");
+  const bioInput        = document.getElementById("profileBio");
+  const bioCountEl      = document.getElementById("profileBioCount");
+  const photoInput      = document.getElementById("profilePhotoInput");
+  const uploadBtn       = document.getElementById("profilePhotoUploadBtn");
+  const removeBtn       = document.getElementById("profilePhotoRemoveBtn");
+  const previewEl       = document.getElementById("profileAvatarPreview");
+  const initialsEl      = document.getElementById("profileAvatarInitials");
+  const photoErrorEl    = document.getElementById("profilePhotoError");
+  const fullNameError   = document.getElementById("profileFullNameError");
+  const usernameError   = document.getElementById("profileUsernameError");
+  const statusEl        = document.getElementById("profileSaveStatus");
+  const cancelBtn       = document.getElementById("profileCancelBtn");
+  const timeFormatRadios = form.querySelectorAll('input[name="profileTimeFormat"]');
+
+  let pendingAvatar = ""; // photo chosen in the form but not saved yet
+  let statusTimer = null;
+
+  function renderAvatarPreview() {
+    if (pendingAvatar) {
+      previewEl.style.backgroundImage = `url(${pendingAvatar})`;
+      initialsEl.textContent = "";
+    } else {
+      previewEl.style.backgroundImage = "";
+      const first = fullNameInput.value.trim().charAt(0);
+      if (first) initialsEl.textContent = first.toUpperCase();
+      else initialsEl.innerHTML = '<i class="fa-solid fa-user"></i>';
+    }
+    removeBtn.disabled = !pendingAvatar;
+  }
+
+  function updateBioCount() {
+    bioCountEl.textContent = bioInput.value.length;
+  }
+
+  function clearErrors() {
+    fullNameError.textContent = "";
+    usernameError.textContent = "";
+    photoErrorEl.textContent = "";
+    fullNameInput.classList.remove("invalid");
+    usernameInput.classList.remove("invalid");
+  }
+
+  function getSelectedTimeFormat() {
+    const checked = form.querySelector('input[name="profileTimeFormat"]:checked');
+    return checked ? checked.value : "12";
+  }
+
+  // Load the saved profile into the form
+  function fillForm() {
+    const profile = loadProfile();
+    fullNameInput.value   = profile.fullName   || "";
+    usernameInput.value   = profile.username   || "";
+    professionInput.value = profile.profession || "";
+    bioInput.value        = profile.bio        || "";
+    timeFormatRadios.forEach(r => { r.checked = r.value === (profile.timeFormat === "24" ? "24" : "12"); });
+    pendingAvatar = profile.avatar || "";
+    clearErrors();
+    updateBioCount();
+    renderAvatarPreview();
+  }
+
+  // Crop to a centred square and shrink, so the saved photo stays small
+  function imageFileToDataUrl(file, size = 256) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = reject;
+        img.onload = () => {
+          const side = Math.min(img.width, img.height);
+          const sx = (img.width - side) / 2;
+          const sy = (img.height - side) / 2;
+          const canvas = document.createElement("canvas");
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff"; // keeps transparent PNGs from turning black in JPEG
+          ctx.fillRect(0, 0, size, size);
+          ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+          resolve(canvas.toDataURL("image/jpeg", 0.85));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  uploadBtn.addEventListener("click", () => photoInput.click());
+
+  photoInput.addEventListener("change", async () => {
+    const file = photoInput.files && photoInput.files[0];
+    photoInput.value = ""; // lets the same file be picked again later
+    if (!file) return;
+
+    photoErrorEl.textContent = "";
+    if (!file.type.startsWith("image/")) {
+      photoErrorEl.textContent = "Please choose an image file.";
+      return;
+    }
+    try {
+      pendingAvatar = await imageFileToDataUrl(file);
+      renderAvatarPreview();
+    } catch (e) {
+      photoErrorEl.textContent = "Couldn't read that image. Try another one.";
+    }
+  });
+
+  removeBtn.addEventListener("click", () => {
+    pendingAvatar = "";
+    renderAvatarPreview();
+  });
+
+  bioInput.addEventListener("input", updateBioCount);
+  fullNameInput.addEventListener("input", () => {
+    fullNameError.textContent = "";
+    fullNameInput.classList.remove("invalid");
+    if (!pendingAvatar) renderAvatarPreview(); // keep the initial letter in sync
+  });
+  usernameInput.addEventListener("input", () => {
+    usernameError.textContent = "";
+    usernameInput.classList.remove("invalid");
+  });
+
+  function showSavedStatus() {
+    statusEl.classList.add("visible");
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => statusEl.classList.remove("visible"), 2500);
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    clearErrors();
+
+    const fullName = fullNameInput.value.trim();
+    const username = usernameInput.value.trim().replace(/^@/, "");
+    let valid = true;
+
+    if (fullName === "") {
+      fullNameError.textContent = "Please enter your full name.";
+      fullNameInput.classList.add("invalid");
+      valid = false;
+    }
+    if (username !== "" && !/^[A-Za-z0-9._]{3,20}$/.test(username)) {
+      usernameError.textContent = "Use 3–20 letters, numbers, dots or underscores.";
+      usernameInput.classList.add("invalid");
+      valid = false;
+    }
+    if (!valid) return;
+
+    try {
+      saveProfile({
+        fullName,
+        username,
+        profession: professionInput.value.trim(),
+        bio: bioInput.value.trim(),
+        avatar: pendingAvatar,
+        timeFormat: getSelectedTimeFormat()
+      });
+    } catch (err) {
+      photoErrorEl.textContent = "Couldn't save — browser storage is full. Try a smaller photo.";
+      return;
+    }
+
+    // The greeting uses the first name
+    localStorage.setItem("topbar_user_name", fullName.split(/\s+/)[0]);
+    usernameInput.value = username;
+
+    // Apply the time format to the due-date pickers, task lists, and top bar
+    [addTaskModalDueDatePicker, editTaskDueDatePicker].forEach(picker => {
+      if (!picker) return;
+      picker.set("time_24hr", !use12Hour());
+      picker.set("dateFormat", getDueDateFormat());
+    });
+    renderTasks();
+    if (typeof window.renderTopbarGreeting === "function") window.renderTopbarGreeting();
+
+    showSavedStatus();
+  });
+
+  cancelBtn.addEventListener("click", () => {
+    fillForm();
+    statusEl.classList.remove("visible");
+  });
+
+  fillForm();
+})();
+
 // ── Init ──────────────────────────────────────────────────
 loadTasks();
 renderTasks();
-const savedTab = localStorage.getItem("activeTab") || "dashboard";
+let savedTab = localStorage.getItem("activeTab") || "dashboard";
+// Settings / Plugins were removed — fall back to Dashboard if one of them was the last open tab
+if (!document.getElementById(`tab-${savedTab}`)) savedTab = "dashboard";
 activateTab(savedTab);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* =====================================================================
+   STICKY TOP BAR — greeting, date, add-task shortcut, profile, theme
+   ===================================================================== */
+
+(function initTopbar() {
+
+  function getGreeting() {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good Morning';
+    if (h < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  }
+
+  function formatDate(d) {
+    const days   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const months = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    const nth = (n) => {
+      if (n > 3 && n < 21) return n + 'th';
+      return n + ['th','st','nd','rd'][n % 10 > 3 ? 0 : n % 10];
+    };
+    return `${days[d.getDay()]}, ${nth(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  }
+
+  function getUserName() {
+    return localStorage.getItem('topbar_user_name') || 'there';
+  }
+
+  function setUserName(name) {
+    const trimmed = name.trim() || 'there';
+    localStorage.setItem('topbar_user_name', trimmed);
+    return trimmed;
+  }
+
+  function renderGreeting() {
+    const greetingEl = document.getElementById('topbarGreeting');
+    const dateEl     = document.getElementById('topbarDate');
+    const avatarEl   = document.getElementById('topbarAvatarInitials');
+    const nameEl     = document.getElementById('topbarProfileName');
+
+    const name = getUserName();
+
+    // Dashboard keeps the greeting; every other section shows its own title
+    // (read from that section's heading), the date stays the same.
+    const activeTab = localStorage.getItem('activeTab') || 'dashboard';
+    const sectionHead = document.querySelector(`#tab-${activeTab} .head`);
+    const greetingText = (activeTab !== 'dashboard' && sectionHead)
+      ? sectionHead.textContent.trim()
+      : `Hi ${name}, ${getGreeting()}`;
+
+    if (greetingEl) greetingEl.textContent = greetingText;
+    if (dateEl)     dateEl.textContent     = formatDate(new Date());
+    const profile = loadProfile();
+    const avatarBox = document.getElementById('topbarAvatar');
+    const roleEl    = document.getElementById('topbarProfileRole');
+
+    if (avatarEl)   avatarEl.textContent   = profile.avatar ? '' : (name === 'there' ? '👤' : name[0].toUpperCase());
+    if (nameEl)     nameEl.textContent     = profile.username ? `@${profile.username}` : (profile.fullName || (name === 'there' ? 'User' : name));
+    if (roleEl)     roleEl.textContent     = profile.profession || 'Task Manager';
+    if (avatarBox) {
+      avatarBox.style.backgroundImage    = profile.avatar ? `url(${profile.avatar})` : '';
+      avatarBox.style.backgroundSize     = 'cover';
+      avatarBox.style.backgroundPosition = 'center';
+    }
+  }
+
+  window.renderTopbarGreeting = renderGreeting;
+  renderGreeting();
+
+  // Refresh greeting at top of every new minute
+  const msUntilNextMin = (60 - new Date().getSeconds()) * 1000;
+  setTimeout(() => { renderGreeting(); setInterval(renderGreeting, 60_000); }, msUntilNextMin);
+
+  // ── Profile dropdown ────────────────────────────────────────────────
+  const profileWrapper = document.getElementById('topbarProfile');
+  const avatar         = document.getElementById('topbarAvatar');
+
+  if (avatar && profileWrapper) {
+    avatar.addEventListener('click', (e) => {
+      e.stopPropagation();
+      profileWrapper.classList.toggle('open');
+    });
+    document.addEventListener('click', (e) => {
+      if (!profileWrapper.contains(e.target)) profileWrapper.classList.remove('open');
+    });
+  }
+
+  // ── Edit name modal ─────────────────────────────────────────────────
+  const editNameBtn      = document.getElementById('topbarEditNameBtn');
+  const nameModalOverlay = document.getElementById('topbarNameModalOverlay');
+  const nameInput        = document.getElementById('topbarNameInput');
+  const nameSaveBtn      = document.getElementById('topbarNameSaveBtn');
+  const nameCancelBtn    = document.getElementById('topbarNameCancelBtn');
+
+  function openNameModal() {
+    const name = getUserName();
+    if (nameInput) nameInput.value = name === 'there' ? '' : name;
+    if (nameModalOverlay) nameModalOverlay.classList.add('open');
+    if (profileWrapper)   profileWrapper.classList.remove('open');
+    setTimeout(() => nameInput && nameInput.focus(), 60);
+  }
+
+  function closeNameModal() {
+    if (nameModalOverlay) nameModalOverlay.classList.remove('open');
+  }
+
+  // "Edit Profile" now opens the Profile page instead of the name popup
+  if (editNameBtn) {
+    editNameBtn.addEventListener('click', () => {
+      if (profileWrapper) profileWrapper.classList.remove('open');
+      activateTab('profile');
+    });
+  }
+  if (nameCancelBtn)    nameCancelBtn.addEventListener('click', closeNameModal);
+  if (nameModalOverlay) nameModalOverlay.addEventListener('click', (e) => {
+    if (e.target === nameModalOverlay) closeNameModal();
+  });
+
+  if (nameSaveBtn) {
+    nameSaveBtn.addEventListener('click', () => {
+      if (nameInput) { setUserName(nameInput.value); renderGreeting(); closeNameModal(); }
+    });
+  }
+
+  if (nameInput) {
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter')  nameSaveBtn && nameSaveBtn.click();
+      if (e.key === 'Escape') closeNameModal();
+    });
+  }
+
+  // First-visit: ask for name automatically
+  if (!localStorage.getItem('topbar_user_name')) {
+    setTimeout(openNameModal, 800);
+  }
+
+  // ── Add Task shortcut ───────────────────────────────────────────────
+  const topbarAddBtn = document.getElementById('topbarAddTaskBtn');
+  if (topbarAddBtn) {
+    topbarAddBtn.addEventListener('click', () => {
+      openAddTaskModal();
+    });
+  }
+
+})();

@@ -4,6 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Task Manager</title>
+    <script>
+      // Applied before CSS paints so there's no flash of the wrong theme on load.
+      (function () {
+        var saved = localStorage.getItem("theme");
+        var theme = saved === "dark" || saved === "light"
+          ? saved
+          : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        if (theme === "dark") document.documentElement.setAttribute("data-theme", "dark");
+      })();
+    </script>
     <link rel="stylesheet" href="css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -117,6 +127,696 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         font-size: 13px;
       }
 
+      /* ── Info cards (Total / Completed / Pending / Overdue tabs) ── */
+      .info-cards-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1.05fr);
+        gap: 20px;
+        margin-top: 20px;
+        align-items: stretch;
+      }
+
+      .info-cards-row.two-cards {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+      }
+
+      @media (max-width: 1100px) {
+        .info-cards-row,
+        .info-cards-row.two-cards {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      .info-card {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 22px 24px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color-soft);
+        border-radius: 18px;
+        box-shadow: var(--card-shadow);
+        transition: box-shadow 0.2s ease, background-color 0.25s ease, border-color 0.25s ease;
+      }
+
+      .info-card:hover {
+        box-shadow: var(--card-shadow-hover);
+      }
+
+      .info-card-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .info-card-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        flex-shrink: 0;
+      }
+
+      .info-card-icon.icon-lavender {
+        background: #f0ebff;
+        color: #6f42c1;
+      }
+
+      .info-card-title {
+        flex: 1;
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .info-card-menu {
+        color: var(--text-faint);
+        font-size: 15px;
+      }
+
+      .info-card-number {
+        font-size: 52px;
+        font-weight: 700;
+        line-height: 1;
+        color: var(--text-primary);
+      }
+
+      .info-card-label {
+        margin-top: 8px;
+        font-size: 18px;
+        font-weight: 500;
+        color: var(--text-muted);
+      }
+
+      .info-card-sub {
+        margin-top: auto;
+        font-size: 13px;
+        color: var(--text-faint);
+      }
+
+      .info-card-rows {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .info-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 15px;
+      }
+
+      .info-dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .dot-purple { background: #7c4dff; }
+      .dot-blue   { background: #3b5bf5; }
+
+      .info-row-label {
+        flex: 1;
+        color: var(--text-secondary);
+      }
+
+      .info-card-priority .info-row-label {
+        flex: 0 0 100px;
+      }
+
+      .info-row-count {
+        min-width: 28px;
+        text-align: right;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .info-bar-track {
+        flex: 1;
+        height: 9px;
+        border-radius: 6px;
+        background: var(--border-color-soft);
+        overflow: hidden;
+      }
+
+      .info-bar-fill,
+      .info-percent-bar-fill {
+        height: 100%;
+        width: 0;
+        border-radius: 6px;
+        transition: width 0.3s ease;
+      }
+
+      .fill-high   { background: #f59e9e; }
+      .fill-medium { background: #f8cc86; }
+      .fill-low    { background: #4cc46e; }
+      .fill-none   { background: #c3c8d3; }
+
+      .info-percent-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: auto;
+      }
+
+      .info-percent-bar-fill {
+        background: #6f42c1;
+      }
+
+      /* !important so these win over the older #completedPercent / #pendingPercent colour rules */
+      .info-percent {
+        font-size: 14px;
+        white-space: nowrap;
+        color: var(--text-muted) !important;
+        font-weight: 400 !important;
+      }
+
+      .info-percent strong {
+        font-weight: 700;
+        color: #6f42c1;
+      }
+
+      .icon-red {
+        background: #fdecec;
+        color: #dc3545;
+      }
+
+      /* ── Dashboard charts ── */
+      .dash-charts-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 20px;
+      }
+
+      .dash-chart-card {
+        min-width: 0;
+        padding: 20px 22px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color-soft);
+        border-radius: 18px;
+        box-shadow: var(--card-shadow);
+        transition: background-color 0.25s ease, border-color 0.25s ease;
+      }
+
+      .dash-chart-card-wide {
+        grid-column: 1 / -1;
+      }
+
+      .dash-chart-title {
+        margin-bottom: 14px;
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .dash-chart-canvas {
+        position: relative;
+        height: 230px;
+      }
+
+      .dash-donut-row {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        height: 230px;
+      }
+
+      .dash-donut-wrap {
+        position: relative;
+        width: 200px;
+        height: 200px;
+        flex-shrink: 0;
+      }
+
+      .dash-donut-center {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+      }
+
+      .dash-donut-center span {
+        font-size: 28px;
+        font-weight: 700;
+        line-height: 1;
+        color: var(--text-primary);
+      }
+
+      .dash-donut-center small {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .dash-legend {
+        flex: 1;
+        min-width: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .dash-legend li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+      }
+
+      .dash-legend-label {
+        flex: 1;
+        color: var(--text-secondary);
+      }
+
+      .dash-legend-value {
+        font-weight: 600;
+        white-space: nowrap;
+        color: var(--text-primary);
+      }
+
+      @media (max-width: 1000px) {
+        .dash-charts-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      /* ── Dashboard: heatmap + recent activity ── */
+      .dash-hm-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .dash-hm-header .dash-chart-title {
+        margin-bottom: 0;
+      }
+
+      .dash-hm-note {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .dash-hm-scroll {
+        overflow-x: auto;
+        padding-bottom: 6px;
+      }
+
+      .dash-hm-grid {
+        display: grid;
+        grid-template-rows: repeat(8, 16px);
+        gap: 4px;
+        width: max-content;
+      }
+
+      .dash-hm-daylabel {
+        grid-column: 1;
+        font-size: 11px;
+        line-height: 16px;
+        color: var(--text-muted);
+      }
+
+      .dash-hm-monthlabel {
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 16px;
+        white-space: nowrap;
+        color: var(--text-primary);
+      }
+
+      .dash-hm-cell {
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+        cursor: default;
+      }
+
+      .dash-hm-cell.lvl-0 { background: var(--border-color-soft); }
+      .dash-hm-cell.lvl-1 { background: #e6f5b8; }
+      .dash-hm-cell.lvl-2 { background: #bfe58d; }
+      .dash-hm-cell.lvl-3 { background: #6ec36b; }
+      .dash-hm-cell.lvl-4 { background: #2e9e42; }
+
+      .dash-hm-legend {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        margin-top: 14px;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .dash-act-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .dash-act-col {
+        min-width: 0;
+        padding: 0 22px;
+      }
+
+      .dash-act-col:first-child { padding-left: 0; }
+      .dash-act-col:last-child  { padding-right: 0; }
+
+      .dash-act-col + .dash-act-col {
+        border-left: 1px solid var(--border-color-soft);
+      }
+
+      .dash-act-col-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      .dash-act-col-title {
+        flex: 1;
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-primary);
+      }
+
+      .dash-act-viewall {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .dash-act-viewall:hover {
+        color: #6f42c1;
+        text-decoration: underline;
+      }
+
+      .dash-act-list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .dash-act-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .dash-act-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        border: 1.5px solid;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        flex-shrink: 0;
+      }
+
+      .dash-act-icon-added     { color: #3b82f6; border-color: #3b82f6; background: #eef4ff; }
+      .dash-act-icon-completed { color: #22a447; border-color: #22a447; background: #eaf7ee; }
+      .dash-act-icon-deadline  { color: #e5484d; border-color: #e5484d; background: #fdecec; }
+
+      .dash-act-name {
+        flex: 1;
+        min-width: 0;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .dash-act-item .priority-badge {
+        flex-shrink: 0;
+        padding: 2px 10px;
+        font-size: 11px;
+      }
+
+      .dash-act-time {
+        flex-shrink: 0;
+        min-width: 64px;
+        text-align: right;
+        font-size: 11px;
+        white-space: nowrap;
+        color: var(--text-muted);
+      }
+
+      .dash-act-empty {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+
+      @media (max-width: 1100px) {
+        .dash-act-grid {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 22px;
+        }
+
+        .dash-act-col,
+        .dash-act-col:first-child,
+        .dash-act-col:last-child {
+          padding: 0;
+        }
+
+        .dash-act-col + .dash-act-col {
+          border-left: none;
+        }
+      }
+
+      /* ── Profile tab ── */
+      .profile-layout {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        gap: 20px;
+        margin-top: 20px;
+        align-items: start;
+      }
+
+      .profile-card {
+        padding: 24px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color-soft);
+        border-radius: 18px;
+        box-shadow: var(--card-shadow);
+        transition: background-color 0.25s ease, border-color 0.25s ease;
+      }
+
+      .profile-photo-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        text-align: center;
+      }
+
+      .profile-avatar-preview {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        background: linear-gradient(135deg, #6f42c1, #a66de8);
+        background-size: cover;
+        background-position: center;
+        color: #fff;
+        font-size: 44px;
+        font-weight: 700;
+        box-shadow: 0 4px 14px rgba(111, 66, 193, 0.3);
+      }
+
+      .profile-link-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 13px;
+        color: #d32f2f;
+      }
+
+      .profile-link-btn:hover {
+        text-decoration: underline;
+      }
+
+      .profile-link-btn:disabled {
+        opacity: 0.4;
+        cursor: default;
+        text-decoration: none;
+      }
+
+      .profile-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .profile-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-bottom: 18px;
+      }
+
+      .profile-field label,
+      .profile-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-muted);
+      }
+
+      .profile-input {
+        width: 100%;
+        padding: 11px 14px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: var(--input-bg);
+        color: var(--text-primary);
+        font-family: inherit;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      }
+
+      .profile-input:focus {
+        border-color: #6f42c1;
+        box-shadow: 0 0 0 3px rgba(111, 66, 193, 0.12);
+      }
+
+      .profile-input.invalid {
+        border-color: #d32f2f;
+      }
+
+      .profile-textarea {
+        min-height: 96px;
+        resize: vertical;
+      }
+
+      .profile-input-prefix {
+        position: relative;
+      }
+
+      .profile-input-prefix span {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        font-size: 14px;
+        pointer-events: none;
+      }
+
+      .profile-input-prefix .profile-input {
+        padding-left: 30px;
+      }
+
+      .profile-hint {
+        font-size: 12px;
+        color: var(--text-faint);
+      }
+
+      .profile-counter {
+        align-self: flex-end;
+      }
+
+      .profile-error {
+        font-size: 12px;
+        color: #d32f2f;
+      }
+
+      .profile-error:empty {
+        display: none;
+      }
+
+      .profile-segmented {
+        display: inline-flex;
+        align-self: flex-start;
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--bg-surface-alt);
+      }
+
+      .profile-segmented label {
+        position: relative;
+        cursor: pointer;
+      }
+
+      .profile-segmented input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .profile-segmented span {
+        display: block;
+        padding: 10px 24px;
+        font-size: 14px;
+        color: var(--text-primary);
+        transition: background-color 0.15s ease, color 0.15s ease;
+      }
+
+      .profile-segmented input:checked + span {
+        background: #6f42c1;
+        color: #fff;
+        font-weight: 600;
+      }
+
+      .profile-segmented input:focus-visible + span {
+        outline: 2px solid #6f42c1;
+        outline-offset: -2px;
+      }
+
+      .profile-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+        margin-top: 8px;
+      }
+
+      .profile-status {
+        margin-right: auto;
+        font-size: 13px;
+        color: #22a447;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+
+      .profile-status.visible {
+        opacity: 1;
+      }
+
+      @media (max-width: 900px) {
+        .profile-layout,
+        .profile-row {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      /* Section title is shown in the top bar, so hide the duplicate heading here */
+      .tab-section .head {
+        display: none;
+      }
+
       .stat-card-single {
         max-width: 260px;
         margin-bottom: 24px;
@@ -140,14 +840,14 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         font-size: 13px;
         padding: 7px 14px;
         border-radius: 20px;
-        border: 1px solid #ddd;
-        background: #fff;
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface);
         cursor: pointer;
-        color: #444;
+        color: var(--text-primary);
       }
 
       .heatmap-filter-btn:hover:not(:disabled) {
-        border-color: #999;
+        border-color: var(--text-faint);
       }
 
       .heatmap-filter-btn.active {
@@ -167,7 +867,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         align-items: center;
         gap: 14px;
         font-size: 13px;
-        color: #555;
+        color: var(--text-muted);
       }
 
       .heatmap-legend .legend-item {
@@ -185,21 +885,21 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       .heatmap-week-label {
         font-size: 13px;
         font-weight: 600;
-        color: #444;
+        color: var(--text-primary);
         margin-bottom: 6px;
       }
 
       .heatmap-days-header,
       .heatmap-days-row {
         display: grid;
-        grid-template-columns: repeat(7, minmax(32px, 1fr));
+        grid-template-columns: repeat(7, 40px);
         gap: 6px;
       }
 
       .heatmap-days-header span {
         font-size: 11px;
         text-align: center;
-        color: #888;
+        color: var(--text-muted);
       }
 
       .heatmap-day {
@@ -209,7 +909,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         align-items: center;
         justify-content: center;
         font-size: 14px;
-        border: 1px solid #e5e5e5;
+        border: 1px solid var(--border-color);
         cursor: default;
       }
 
@@ -218,7 +918,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         background: transparent;
       }
 
-      .heatmap-day.level-0 { background: #ffffff; }
+      .heatmap-day.level-0 { background: var(--bg-surface); }
       .heatmap-day.level-1 { background: #fff3b0; }
       .heatmap-day.level-2 { background: #c6e9c8; }
       .heatmap-day.level-3 { background: #7fcf85; }
@@ -249,14 +949,14 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         font-size: 13px;
         padding: 6px 12px;
         border-radius: 20px;
-        border: 1px solid #ddd;
-        background: #fff;
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface);
         cursor: pointer;
-        color: #444;
+        color: var(--text-primary);
       }
 
       .best-day-preset-btn:hover {
-        border-color: #999;
+        border-color: var(--text-faint);
       }
 
       .best-day-preset-btn.active {
@@ -268,13 +968,13 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       .best-day-range-input {
         font-family: inherit;
         font-size: 13px;
-        padding: 8px 12px;
+        padding: 8px 36px 8px 12px;
         border-radius: 8px;
-        border: 1px solid #ddd;
+        border: 1px solid var(--border-color);
         min-width: 220px;
         cursor: pointer;
-        background: #fff;
-        color: #333;
+        background: var(--bg-surface);
+        color: var(--text-primary);
       }
 
       .best-day-result {
@@ -285,7 +985,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       }
 
       .best-day-empty {
-        color: #888;
+        color: var(--text-muted);
         font-size: 14px;
       }
 
@@ -323,10 +1023,10 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         display: flex;
         justify-content: space-between;
         padding: 10px 14px;
-        border: 1px solid #eee;
+        border: 1px solid var(--border-color-soft);
         border-radius: 8px;
         font-size: 13px;
-        color: #444;
+        color: var(--text-primary);
       }
 
       .best-day-list-row.is-best {
@@ -349,9 +1049,9 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         align-items: center;
         gap: 14px;
         padding: 14px 16px;
-        border: 1px solid #eee;
+        border: 1px solid var(--border-color-soft);
         border-radius: 10px;
-        background: #fff;
+        background: var(--bg-surface);
       }
 
       .activity-icon {
@@ -369,7 +1069,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       .activity-name {
         font-size: 14px;
         font-weight: 600;
-        color: #222;
+        color: var(--text-primary);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -380,12 +1080,12 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         align-items: center;
         gap: 10px;
         font-size: 12px;
-        color: #777;
+        color: var(--text-muted);
       }
 
       .activity-empty {
         list-style: none;
-        color: #888;
+        color: var(--text-muted);
         font-size: 14px;
         padding: 14px 16px;
       }
@@ -409,13 +1109,29 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       .range-picker-input {
         font-family: inherit;
         font-size: 13px;
-        padding: 8px 12px;
+        padding: 8px 36px 8px 12px;
         border-radius: 8px;
-        border: 1px solid #ddd;
+        border: 1px solid var(--border-color);
         min-width: 200px;
         cursor: pointer;
-        background: #fff;
-        color: #333;
+        background: var(--bg-surface);
+        color: var(--text-primary);
+      }
+
+      .range-picker-input-wrapper {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
+
+      .range-picker-input-wrapper i {
+        position: absolute;
+        right: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        pointer-events: none;
+        font-size: 13px;
       }
 
       .range-picker-reset {
@@ -423,24 +1139,24 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         font-size: 13px;
         padding: 7px 14px;
         border-radius: 20px;
-        border: 1px solid #ddd;
-        background: #fff;
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface);
         cursor: pointer;
-        color: #444;
+        color: var(--text-primary);
         white-space: nowrap;
       }
 
       .range-picker-reset:hover {
-        border-color: #999;
+        border-color: var(--text-faint);
       }
 
       /* ── Completion Rate ──────────────────────────────────── */
       .completion-rate-card {
         margin-top: 24px;
         padding: 24px;
-        border: 1px solid #eee;
+        border: 1px solid var(--border-color-soft);
         border-radius: 12px;
-        background: #fff;
+        background: var(--bg-surface);
       }
 
       .completion-rate-value {
@@ -466,7 +1182,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
       .completion-rate-sub {
         margin-top: 12px;
         font-size: 13px;
-        color: #777;
+        color: var(--text-muted);
       }
 
       /* Color thresholds — reused for both the % text and the bar fill */
@@ -485,9 +1201,9 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         font-size: 13px;
         padding: 8px 12px;
         border-radius: 8px;
-        border: 1px solid #ddd;
-        background: #fff;
-        color: #333;
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface);
+        color: var(--text-primary);
         cursor: pointer;
       }
 
@@ -511,7 +1227,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         align-items: center;
         gap: 8px;
         font-size: 13px;
-        color: #555;
+        color: var(--text-muted);
       }
 
       .pagination-select {
@@ -519,9 +1235,9 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         font-size: 13px;
         padding: 6px 10px;
         border-radius: 6px;
-        border: 1px solid #ddd;
-        background: #fff;
-        color: #333;
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface);
+        color: var(--text-primary);
         cursor: pointer;
       }
 
@@ -536,14 +1252,14 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         font-size: 13px;
         padding: 6px 14px;
         border-radius: 6px;
-        border: 1px solid #ddd;
-        background: #fff;
-        color: #444;
+        border: 1px solid var(--border-color);
+        background: var(--bg-surface);
+        color: var(--text-primary);
         cursor: pointer;
       }
 
       .pagination-btn:hover:not(:disabled) {
-        border-color: #999;
+        border-color: var(--text-faint);
       }
 
       .pagination-btn:disabled {
@@ -553,7 +1269,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
       .pagination-info {
         font-size: 13px;
-        color: #666;
+        color: var(--text-muted);
         white-space: nowrap;
       }
     </style>
@@ -608,20 +1324,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <button class="accordion-item" data-tab="monthly-trend">Monthly Trend</button>
               <button class="accordion-item" data-tab="priority-distribution">Priority Distribution</button>
               <button class="accordion-item" data-tab="productivity-heatmap">Productivity Heatmap</button>
-            </div>
-          </div>
-
-          <!-- Insights -->
-          <div class="accordion-group" data-group="insights">
-            <button class="accordion-header">
-              <span><i class="fa-solid fa-lightbulb"></i> Insights</span>
-              <span class="accordion-arrow">▾</span>
-            </button>
-            <div class="accordion-body">
               <button class="accordion-item" data-tab="best-day">Best Day</button>
-              <button class="accordion-item" data-tab="avg-completion-time">Average Completion Time</button>
-              <button class="accordion-item" data-tab="longest-streak">Longest Streak</button>
-              <button class="accordion-item" data-tab="productivity-score">Productivity Score</button>
             </div>
           </div>
 
@@ -644,8 +1347,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
         <!-- Bottom Menu -->
         <div class="menu bottom-menu">
-          <button class="menu-btn" data-tab="settings"><i class="fa-solid fa-gear"></i> <span>Settings</span></button>
-          <button class="menu-btn" data-tab="plugins"><i class="fa-solid fa-screwdriver-wrench"></i> <span>Plugins & Integrations</span></button>
+          <button class="menu-btn" data-tab="profile"><i class="fa-solid fa-user"></i> <span>Profile</span></button>
         </div>
 
       </div>
@@ -656,11 +1358,67 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <!-- ===== MAIN CONTENT AREA ===== -->
     <div class="inner-section-2">
 
+      <!-- ===== STICKY TOP BAR ===== -->
+      <header class="topbar" id="appTopbar">
+        <!-- Left: greeting + date -->
+        <div class="topbar-left">
+          <span class="topbar-greeting" id="topbarGreeting">Hi there, Good Morning</span>
+          <span class="topbar-date" id="topbarDate"></span>
+        </div>
+
+        <!-- Right: Add Task button, theme toggle, profile -->
+        <div class="topbar-right">
+          <button class="topbar-add-btn" id="topbarAddTaskBtn">
+            <i class="fa-solid fa-plus"></i>
+            <span>Add Task</span>
+          </button>
+
+          <button class="topbar-theme-btn" id="themeToggleBtn" title="Toggle dark / light theme" aria-label="Toggle dark / light theme">
+            <i class="fa-solid fa-moon"></i>
+          </button>
+
+          <!-- Profile avatar — click to show name dropdown -->
+          <div class="topbar-profile" id="topbarProfile">
+            <div class="topbar-avatar" id="topbarAvatar">
+              <span id="topbarAvatarInitials">U</span>
+            </div>
+            <!-- Profile dropdown -->
+            <div class="topbar-profile-dropdown" id="topbarProfileDropdown">
+              <div class="topbar-profile-info">
+                <div class="topbar-profile-name" id="topbarProfileName">User</div>
+                <div class="topbar-profile-role" id="topbarProfileRole">Task Manager</div>
+              </div>
+              <hr class="topbar-dropdown-divider">
+              <button class="topbar-dropdown-item" id="topbarEditNameBtn">
+                <i class="fa-solid fa-user-pen"></i> Edit Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+      <!-- ===== END STICKY TOP BAR ===== -->
+
+      <!-- Edit Name Modal -->
+      <div class="topbar-name-modal-overlay" id="topbarNameModalOverlay">
+        <div class="topbar-name-modal">
+          <h3>What's your name?</h3>
+          <p>This will appear in the greeting.</p>
+          <input type="text" id="topbarNameInput" class="topbar-name-input" placeholder="Enter your name" maxlength="40">
+          <div class="topbar-name-modal-actions">
+            <button class="topbar-name-cancel" id="topbarNameCancelBtn">Cancel</button>
+            <button class="topbar-name-save" id="topbarNameSaveBtn">Save</button>
+          </div>
+        </div>
+        </div>
       <!-- ───── TAB: DASHBOARD (restored original content) ───── -->
       <div class="tab-section active" id="tab-dashboard">
         <div class="container">
-          <p class="head">Dashboard</p>
-          <p class="sub-head">The smarter way to manage your day</p>
+                  <div class="overview-topbar">
+            <div>
+              <p class="head">Dashboard</p>
+              <p class="sub-head">The smarter way to manage your day</p>
+            </div>
+          </div>
 
           <!-- Stats Cards -->
           <div class="stats-cards">
@@ -692,6 +1450,15 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
             </div>
 
             <div class="stat-card">
+              <div class="stat-icon icon-red"><i class="fas fa-triangle-exclamation"></i></div>
+              <div class="stat-info">
+                <p class="stat-number" id="overdueCountDashboard">0</p>
+                <p class="stat-label">Overdue</p>
+                <p class="stat-sub" id="overduePercentAlt">0% of total</p>
+              </div>
+            </div>
+
+            <div class="stat-card">
               <div class="stat-icon icon-purple"><i class="fas fa-flag"></i></div>
               <div class="stat-info">
                 <p class="stat-number" id="highPriorityCount">0</p>
@@ -701,40 +1468,102 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
             </div>
           </div>
 
-          <!-- Task Input -->
-          <div class="content">
-            <div class="enter-task">
-              <input type="text" id="taskInput" class="task-field" placeholder="Enter task">
-              <div class="date-input-wrapper">
-                <input type="text" id="dueDate" placeholder="Due Date">
-                <i class="fa-regular fa-calendar"></i>
-              </div>
+          <!-- Dashboard charts -->
+          <div class="dash-charts-grid">
 
-              <div class="custom-select">
-                <div class="selected">
-                  <span>No Priority</span>
-                  <span class="arrow">▼</span>
+            <div class="dash-chart-card">
+              <h4 class="dash-chart-title">Task Status</h4>
+              <div class="dash-donut-row">
+                <div class="dash-donut-wrap">
+                  <canvas id="dashTaskStatusChart"></canvas>
+                  <div class="dash-donut-center"><span id="dashTaskStatusTotal">0</span><small>Total</small></div>
                 </div>
-                <ul class="options">
-                  <li data-value="">No Priority</li>
-                  <li data-value="high">High</li>
-                  <li data-value="medium">Medium</li>
-                  <li data-value="low">Low</li>
-                </ul>
+                <ul class="dash-legend" id="dashTaskStatusLegend"></ul>
               </div>
-
-              <button id="addBtn" class="addBtn">Add</button>
             </div>
-          </div>
-        </div>
 
-        <!-- Task List -->
-        <div class="tasks">
-          <div class="recent-header">
-            <span class="recent-title">Recent Activity</span>
-            <button id="viewAllBtn" class="view-all-btn">View All Tasks →</button>
+            <div class="dash-chart-card">
+              <h4 class="dash-chart-title">Daily Completion Trend</h4>
+              <div class="dash-chart-canvas"><canvas id="dashDailyChart"></canvas></div>
+            </div>
+
+            <div class="dash-chart-card">
+              <h4 class="dash-chart-title">Weekly Trend</h4>
+              <div class="dash-chart-canvas"><canvas id="dashWeeklyChart"></canvas></div>
+            </div>
+
+            <div class="dash-chart-card">
+              <h4 class="dash-chart-title">Priority Distribution</h4>
+              <div class="dash-donut-row">
+                <div class="dash-donut-wrap">
+                  <canvas id="dashPriorityChart"></canvas>
+                  <div class="dash-donut-center"><span id="dashPriorityTotal">0</span><small>Total</small></div>
+                </div>
+                <ul class="dash-legend" id="dashPriorityLegend"></ul>
+              </div>
+            </div>
+
+            <div class="dash-chart-card dash-chart-card-wide">
+              <h4 class="dash-chart-title">Monthly Trend</h4>
+              <div class="dash-chart-canvas"><canvas id="dashMonthlyChart"></canvas></div>
+            </div>
+
+            <!-- Productivity Heatmap -->
+            <div class="dash-chart-card dash-chart-card-wide">
+              <div class="dash-hm-header">
+                <h4 class="dash-chart-title">Productivity Heatmap</h4>
+                <span class="dash-hm-note">Tasks completed per day · last 6 months</span>
+              </div>
+              <div class="dash-hm-scroll">
+                <div class="dash-hm-grid" id="dashHeatmapGrid"></div>
+              </div>
+              <div class="dash-hm-legend">
+                <span>Less</span>
+                <span class="dash-hm-cell lvl-0"></span>
+                <span class="dash-hm-cell lvl-1"></span>
+                <span class="dash-hm-cell lvl-2"></span>
+                <span class="dash-hm-cell lvl-3"></span>
+                <span class="dash-hm-cell lvl-4"></span>
+                <span>More</span>
+              </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="dash-chart-card dash-chart-card-wide">
+              <h4 class="dash-chart-title">Recent Activity</h4>
+              <div class="dash-act-grid">
+
+                <div class="dash-act-col">
+                  <div class="dash-act-col-header">
+                    <span class="dash-act-icon dash-act-icon-added"><i class="fa-solid fa-plus"></i></span>
+                    <span class="dash-act-col-title">Recently Added</span>
+                    <button type="button" class="dash-act-viewall" data-tab="recently-added">View all</button>
+                  </div>
+                  <ul class="dash-act-list" id="dashRecentlyAddedList"></ul>
+                </div>
+
+                <div class="dash-act-col">
+                  <div class="dash-act-col-header">
+                    <span class="dash-act-icon dash-act-icon-completed"><i class="fa-solid fa-check"></i></span>
+                    <span class="dash-act-col-title">Recently Completed</span>
+                    <button type="button" class="dash-act-viewall" data-tab="recently-completed">View all</button>
+                  </div>
+                  <ul class="dash-act-list" id="dashRecentlyCompletedList"></ul>
+                </div>
+
+                <div class="dash-act-col">
+                  <div class="dash-act-col-header">
+                    <span class="dash-act-icon dash-act-icon-deadline"><i class="fa-regular fa-clock"></i></span>
+                    <span class="dash-act-col-title">Upcoming Deadlines</span>
+                    <button type="button" class="dash-act-viewall" data-tab="upcoming-deadlines">View all</button>
+                  </div>
+                  <ul class="dash-act-list" id="dashUpcomingDeadlinesList"></ul>
+                </div>
+
+              </div>
+            </div>
+
           </div>
-          <ul id="taskList"></ul>
         </div>
       </div>
       <!-- ───── END TAB: DASHBOARD ───── -->
@@ -749,33 +1578,95 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <p class="sub-head">Every task in one place</p>
             </div>
             <div class="range-picker-wrapper">
-              <input type="text" id="totalTasksRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <div class="range-picker-input-wrapper">
+                <input type="text" id="totalTasksRangeInput" class="range-picker-input" placeholder="Select time period" readonly>
+                <i class="fa-regular fa-calendar"></i>
+              </div>
               <button type="button" class="range-picker-reset" id="totalTasksRangeReset">All Time</button>
             </div>
           </div>
 
-          <!-- Stat Card -->
-          <div class="stats-cards stat-card-single">
-            <div class="stat-card">
-              <div class="stat-icon icon-blue"><i class="fas fa-clipboard-list"></i></div>
-              <div class="stat-info">
-                <p class="stat-number" id="totalCountAlt">0</p>
-                <p class="stat-label">Total Tasks</p>
-                <p class="stat-sub">All tasks</p>
+          <!-- Stat Card + Priority Breakdown -->
+          <div class="info-cards-row two-cards">
+          <div class="info-card info-card-main">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-blue"><i class="fas fa-clipboard-list"></i></div>
+              <h4 class="info-card-title">Total Tasks</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div>
+              <p class="info-card-number" id="totalCountAlt">0</p>
+              <p class="info-card-label">Total Tasks</p>
+            </div>
+            <p class="info-card-sub">All tasks</p>
+          </div>
+
+          <div class="info-card info-card-priority" id="priorityBreakdownCard">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-lavender"><i class="fas fa-chart-simple"></i></div>
+              <h4 class="info-card-title">Tasks by Priority</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div class="info-card-rows">
+              <div class="info-row">
+                <span class="info-dot dot-high"></span>
+                <span class="info-row-label">High Priority</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-high"></div></div>
+                <span class="info-row-count" id="totalTasksHighPriorityCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-medium"></span>
+                <span class="info-row-label">Medium</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-medium"></div></div>
+                <span class="info-row-count" id="totalTasksMediumPriorityCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-low"></span>
+                <span class="info-row-label">Low</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-low"></div></div>
+                <span class="info-row-count" id="totalTasksLowPriorityCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-none"></span>
+                <span class="info-row-label">No Priority</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-none"></div></div>
+                <span class="info-row-count" id="totalTasksNoPriorityCount">0</span>
               </div>
             </div>
           </div>
-
-          <!-- Search -->
-          <div class="search-task">
-            <input type="text" id="totalTasksSearchInput" class="search-field" placeholder="Search tasks...">
           </div>
+          <div class="search-sort-row">
+            <div class="search-input-wrapper">
+              <input type="text" id="totalTasksSearchInput" class="search-field" placeholder="Search tasks...">
+              <i class="fa-solid fa-magnifying-glass"></i>
+            </div>
 
-          <!-- Sort Buttons -->
-          <div class="sort-taks">
-            <button id="totalTasksAllBtn" class="sortBtn">All</button>
-            <button id="totalTasksCompletedBtn" class="sortBtn">Completed</button>
-            <button id="totalTasksPendingBtn" class="sortBtn">Pending</button>
+            <div class="custom-select custom-select-wide" id="totalTasksActionFilterDropdown">
+              <div class="selected">
+                <span>Filter by Actions</span>
+                <span class="arrow">▼</span>
+              </div>
+              <ul class="options">
+                <li data-value="all">All</li>
+                <li data-value="completed">Completed</li>
+                <li data-value="pending">Pending</li>
+                <li data-value="overdue">Overdue</li>
+              </ul>
+            </div>
+
+            <div class="custom-select custom-select-wide" id="totalTasksPriorityFilterDropdown">
+              <div class="selected">
+                <span>Filter by Priority</span>
+                <span class="arrow">▼</span>
+              </div>
+              <ul class="options">
+                <li data-value="">Filter by Priority</li>
+                <li data-value="high">High</li>
+                <li data-value="medium">Medium</li>
+                <li data-value="low">Low</li>
+                <li data-value="none">No Priority</li>
+              </ul>
+            </div>
           </div>
         </div>
 
@@ -813,19 +1704,115 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <p class="sub-head">Tasks you've finished</p>
             </div>
             <div class="range-picker-wrapper">
-              <input type="text" id="completedRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <div class="range-picker-input-wrapper">
+                <input type="text" id="completedRangeInput" class="range-picker-input" placeholder="Select time period" readonly>
+                <i class="fa-regular fa-calendar"></i>
+              </div>
               <button type="button" class="range-picker-reset" id="completedRangeReset">All Time</button>
             </div>
           </div>
 
-          <div class="stats-cards stat-card-single">
-            <div class="stat-card">
-              <div class="stat-icon icon-green"><i class="fas fa-check-circle"></i></div>
-              <div class="stat-info">
-                <p class="stat-number" id="completedCount">0</p>
-                <p class="stat-label">Completed</p>
-                <p class="stat-sub" id="completedPercent">0% of total</p>
+          <div class="info-cards-row">
+          <div class="info-card info-card-main">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-green"><i class="fas fa-check-circle"></i></div>
+              <h4 class="info-card-title">Completed Tasks</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div>
+              <p class="info-card-number" id="completedCount">0</p>
+              <p class="info-card-label">Completed</p>
+            </div>
+            <div class="info-percent-row">
+              <div class="info-bar-track info-percent-track"><div class="info-percent-bar-fill" data-source="completedPercent"></div></div>
+              <span class="info-percent" id="completedPercent">0% of total</span>
+            </div>
+          </div>
+
+          <div class="info-card info-card-priority" id="completedPriorityBreakdownCard">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-lavender"><i class="fas fa-chart-simple"></i></div>
+              <h4 class="info-card-title">Tasks by Priority</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div class="info-card-rows">
+              <div class="info-row">
+                <span class="info-dot dot-high"></span>
+                <span class="info-row-label">High Priority</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-high"></div></div>
+                <span class="info-row-count" id="completedPriorityHighCount">0</span>
               </div>
+              <div class="info-row">
+                <span class="info-dot dot-medium"></span>
+                <span class="info-row-label">Medium</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-medium"></div></div>
+                <span class="info-row-count" id="completedPriorityMediumCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-low"></span>
+                <span class="info-row-label">Low</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-low"></div></div>
+                <span class="info-row-count" id="completedPriorityLowCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-none"></span>
+                <span class="info-row-label">No Priority</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-none"></div></div>
+                <span class="info-row-count" id="completedPriorityNoneCount">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Static counts: always based on today's real date, independent of the range picker above -->
+          <div class="info-card info-card-static" id="completedStaticStatsCard">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-lavender"><i class="fa-regular fa-calendar-check"></i></div>
+              <h4 class="info-card-title">Completion Timeline</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div class="info-card-rows">
+              <div class="info-row">
+                <span class="info-dot dot-low"></span>
+                <span class="info-row-label">Completed Today</span>
+                <span class="info-row-count" id="completedTodayCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-blue"></span>
+                <span class="info-row-label">Completed This Week</span>
+                <span class="info-row-count" id="completedThisWeekCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-purple"></span>
+                <span class="info-row-label">Completed This Month</span>
+                <span class="info-row-count" id="completedThisMonthCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-medium"></span>
+                <span class="info-row-label">Completed On Time</span>
+                <span class="info-row-count" id="completedOnTimeCount">0</span>
+              </div>
+            </div>
+          </div>
+          </div>
+
+          <div class="search-sort-row">
+            <div class="search-input-wrapper">
+              <input type="text" id="completedSearchInput" class="search-field" placeholder="Search tasks...">
+              <i class="fa-solid fa-magnifying-glass"></i>
+            </div>
+
+            <div class="custom-select custom-select-wide" id="completedPriorityFilterDropdown">
+              <div class="selected">
+                <span>Filter by Priority</span>
+                <span class="arrow">▼</span>
+              </div>
+              <ul class="options">
+                <li data-value="">Filter by Priority</li>
+                <li data-value="high">High</li>
+                <li data-value="medium">Medium</li>
+                <li data-value="low">Low</li>
+                <li data-value="none">No Priority</li>
+              </ul>
             </div>
           </div>
         </div>
@@ -863,19 +1850,127 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <p class="sub-head">Tasks still in progress</p>
             </div>
             <div class="range-picker-wrapper">
-              <input type="text" id="pendingRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <div class="range-picker-input-wrapper">
+                <input type="text" id="pendingRangeInput" class="range-picker-input" placeholder="Select time period" readonly>
+                <i class="fa-regular fa-calendar"></i>
+              </div>
               <button type="button" class="range-picker-reset" id="pendingRangeReset">All Time</button>
             </div>
           </div>
 
-          <div class="stats-cards stat-card-single">
-            <div class="stat-card">
-              <div class="stat-icon icon-orange"><i class="fas fa-clock"></i></div>
-              <div class="stat-info">
-                <p class="stat-number" id="pendingCount">0</p>
-                <p class="stat-label">Pending</p>
-                <p class="stat-sub" id="pendingPercent">0% of total</p>
+          <div class="info-cards-row">
+          <div class="info-card info-card-main">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-orange"><i class="fas fa-clock"></i></div>
+              <h4 class="info-card-title">Pending Tasks</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div>
+              <p class="info-card-number" id="pendingCount">0</p>
+              <p class="info-card-label">Pending</p>
+            </div>
+            <div class="info-percent-row">
+              <div class="info-bar-track info-percent-track"><div class="info-percent-bar-fill" data-source="pendingPercent"></div></div>
+              <span class="info-percent" id="pendingPercent">0% of total</span>
+            </div>
+          </div>
+
+          <div class="info-card info-card-priority" id="pendingPriorityBreakdownCard">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-lavender"><i class="fas fa-chart-simple"></i></div>
+              <h4 class="info-card-title">Tasks by Priority</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div class="info-card-rows">
+              <div class="info-row">
+                <span class="info-dot dot-high"></span>
+                <span class="info-row-label">High Priority</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-high"></div></div>
+                <span class="info-row-count" id="pendingPriorityHighCount">0</span>
               </div>
+              <div class="info-row">
+                <span class="info-dot dot-medium"></span>
+                <span class="info-row-label">Medium</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-medium"></div></div>
+                <span class="info-row-count" id="pendingPriorityMediumCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-low"></span>
+                <span class="info-row-label">Low</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-low"></div></div>
+                <span class="info-row-count" id="pendingPriorityLowCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-none"></span>
+                <span class="info-row-label">No Priority</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-none"></div></div>
+                <span class="info-row-count" id="pendingPriorityNoneCount">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Static due-date buckets: always based on today's real date, independent of the range picker above.
+               Note: "Due This Month" counts all pending tasks due anywhere in the current month,
+               so it overlaps with Today/Tomorrow/This Week by design. -->
+          <div class="info-card info-card-static" id="pendingStaticStatsCard">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-lavender"><i class="fa-regular fa-calendar"></i></div>
+              <h4 class="info-card-title">Upcoming Deadlines</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div class="info-card-rows">
+              <div class="info-row">
+                <span class="info-dot dot-high"></span>
+                <span class="info-row-label">Overdue</span>
+                <span class="info-row-count" id="pendingOverdueCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-medium"></span>
+                <span class="info-row-label">Due Today</span>
+                <span class="info-row-count" id="pendingDueTodayCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-low"></span>
+                <span class="info-row-label">Due Tomorrow</span>
+                <span class="info-row-count" id="pendingDueTomorrowCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-purple"></span>
+                <span class="info-row-label">Due This Week</span>
+                <span class="info-row-count" id="pendingDueThisWeekCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-blue"></span>
+                <span class="info-row-label">Due This Month</span>
+                <span class="info-row-count" id="pendingDueThisMonthCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-none"></span>
+                <span class="info-row-label">Due Beyond This Month</span>
+                <span class="info-row-count" id="pendingDueLaterCount">0</span>
+              </div>
+            </div>
+          </div>
+          </div>
+
+          <div class="search-sort-row">
+            <div class="search-input-wrapper">
+              <input type="text" id="pendingSearchInput" class="search-field" placeholder="Search tasks...">
+              <i class="fa-solid fa-magnifying-glass"></i>
+            </div>
+
+            <div class="custom-select custom-select-wide" id="pendingPriorityFilterDropdown">
+              <div class="selected">
+                <span>Filter by Priority</span>
+                <span class="arrow">▼</span>
+              </div>
+              <ul class="options">
+                <li data-value="">Filter by Priority</li>
+                <li data-value="high">High</li>
+                <li data-value="medium">Medium</li>
+                <li data-value="low">Low</li>
+                <li data-value="none">No Priority</li>
+              </ul>
             </div>
           </div>
         </div>
@@ -915,19 +2010,112 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         <p class="sub-head">Tasks past their due date</p>
       </div>
       <div class="range-picker-wrapper">
-        <input type="text" id="overdueRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+        <div class="range-picker-input-wrapper">
+          <input type="text" id="overdueRangeInput" class="range-picker-input" placeholder="Select time period" readonly>
+          <i class="fa-regular fa-calendar"></i>
+        </div>
         <button type="button" class="range-picker-reset" id="overdueRangeReset">All Time</button>
       </div>
     </div>
 
-    <div class="stats-cards stat-card-single">
-      <div class="stat-card">
-        <div class="stat-icon icon-orange"><i class="fas fa-triangle-exclamation"></i></div>
-        <div class="stat-info">
-          <p class="stat-number" id="overdueCount">0</p>
-          <p class="stat-label">Overdue</p>
-          <p class="stat-sub">Tasks pending</p>
+    <div class="info-cards-row">
+          <div class="info-card info-card-main">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-orange"><i class="fas fa-triangle-exclamation"></i></div>
+              <h4 class="info-card-title">Overdue Tasks</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div>
+              <p class="info-card-number" id="overdueCount">0</p>
+              <p class="info-card-label">Overdue</p>
+            </div>
+            <p class="info-card-sub">Tasks pending</p>
+          </div>
+
+          <div class="info-card info-card-priority" id="overduePriorityBreakdownCard">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-lavender"><i class="fas fa-chart-simple"></i></div>
+              <h4 class="info-card-title">Tasks by Priority</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div class="info-card-rows">
+              <div class="info-row">
+                <span class="info-dot dot-high"></span>
+                <span class="info-row-label">High Priority</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-high"></div></div>
+                <span class="info-row-count" id="overduePriorityHighCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-medium"></span>
+                <span class="info-row-label">Medium</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-medium"></div></div>
+                <span class="info-row-count" id="overduePriorityMediumCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-low"></span>
+                <span class="info-row-label">Low</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-low"></div></div>
+                <span class="info-row-count" id="overduePriorityLowCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-none"></span>
+                <span class="info-row-label">No Priority</span>
+                <div class="info-bar-track"><div class="info-bar-fill fill-none"></div></div>
+                <span class="info-row-count" id="overduePriorityNoneCount">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Static overdue-age buckets: always based on today's real date, independent of the range picker above -->
+          <div class="info-card info-card-static" id="overdueStaticStatsCard">
+            <div class="info-card-header">
+              <div class="info-card-icon icon-lavender"><i class="fa-solid fa-hourglass-half"></i></div>
+              <h4 class="info-card-title">Overdue Aging</h4>
+              <span class="info-card-menu"><i class="fa-solid fa-ellipsis-vertical"></i></span>
+            </div>
+            <div class="info-card-rows">
+              <div class="info-row">
+                <span class="info-dot dot-high"></span>
+                <span class="info-row-label">Overdue From Yesterday</span>
+                <span class="info-row-count" id="overdueYesterdayCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-medium"></span>
+                <span class="info-row-label">Overdue From Last Week</span>
+                <span class="info-row-count" id="overdueLastWeekCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-purple"></span>
+                <span class="info-row-label">Overdue From Last Month</span>
+                <span class="info-row-count" id="overdueLastMonthCount">0</span>
+              </div>
+              <div class="info-row">
+                <span class="info-dot dot-none"></span>
+                <span class="info-row-label">Overdue From A Month Ago+</span>
+                <span class="info-row-count" id="overdueMonthAgoPlusCount">0</span>
+              </div>
+            </div>
+          </div>
+          </div>
+
+    <div class="search-sort-row">
+      <div class="search-input-wrapper">
+        <input type="text" id="overdueSearchInput" class="search-field" placeholder="Search tasks...">
+        <i class="fa-solid fa-magnifying-glass"></i>
+      </div>
+
+      <div class="custom-select custom-select-wide" id="overduePriorityFilterDropdown">
+        <div class="selected">
+          <span>Filter by Priority</span>
+          <span class="arrow">▼</span>
         </div>
+        <ul class="options">
+          <li data-value="">Filter by Priority</li>
+          <li data-value="high">High</li>
+          <li data-value="medium">Medium</li>
+          <li data-value="low">Low</li>
+          <li data-value="none">No Priority</li>
+        </ul>
       </div>
     </div>
   </div>
@@ -962,7 +2150,10 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <p class="sub-head">Completed ÷ Total × 100</p>
             </div>
             <div class="range-picker-wrapper">
-              <input type="text" id="completionRateRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <div class="range-picker-input-wrapper">
+                <input type="text" id="completionRateRangeInput" class="range-picker-input" placeholder="Select time period" readonly>
+                <i class="fa-regular fa-calendar"></i>
+              </div>
               <button type="button" class="range-picker-reset" id="completionRateRangeReset">All Time</button>
             </div>
           </div>
@@ -986,7 +2177,10 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <p class="sub-head">Overview of completed, pending and overdue tasks</p>
             </div>
             <div class="range-picker-wrapper">
-              <input type="text" id="taskStatusRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <div class="range-picker-input-wrapper">
+                <input type="text" id="taskStatusRangeInput" class="range-picker-input" placeholder="Select time period" readonly>
+                <i class="fa-regular fa-calendar"></i>
+              </div>
               <button type="button" class="range-picker-reset" id="taskStatusRangeReset">All Time</button>
             </div>
           </div>
@@ -1008,7 +2202,10 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <p class="sub-head" id="dailyCompletionSubHead">How many tasks did I complete every day? (this week)</p>
             </div>
             <div class="range-picker-wrapper">
-              <input type="text" id="dailyCompletionRangeInput" class="range-picker-input" placeholder="This Week" readonly>
+              <div class="range-picker-input-wrapper">
+                <input type="text" id="dailyCompletionRangeInput" class="range-picker-input" placeholder="Select time period" readonly>
+                <i class="fa-regular fa-calendar"></i>
+              </div>
               <button type="button" class="range-picker-reset" id="dailyCompletionRangeReset">This Week</button>
             </div>
           </div>
@@ -1027,7 +2224,10 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <p class="sub-head" id="weeklyTrendSubHead">Tasks completed over the last 4 weeks</p>
             </div>
             <div class="range-picker-wrapper">
-              <input type="text" id="weeklyTrendRangeInput" class="range-picker-input" placeholder="Last 4 Weeks" readonly>
+              <div class="range-picker-input-wrapper">
+                <input type="text" id="weeklyTrendRangeInput" class="range-picker-input" placeholder="Select time period" readonly>
+                <i class="fa-regular fa-calendar"></i>
+              </div>
               <button type="button" class="range-picker-reset" id="weeklyTrendRangeReset">Last 4 Weeks</button>
             </div>
           </div>
@@ -1063,7 +2263,10 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <p class="sub-head">Shows workload by priority</p>
             </div>
             <div class="range-picker-wrapper">
-              <input type="text" id="priorityDistributionRangeInput" class="range-picker-input" placeholder="All Time" readonly>
+              <div class="range-picker-input-wrapper">
+                <input type="text" id="priorityDistributionRangeInput" class="range-picker-input" placeholder="Select time period" readonly>
+                <i class="fa-regular fa-calendar"></i>
+              </div>
               <button type="button" class="range-picker-reset" id="priorityDistributionRangeReset">All Time</button>
             </div>
           </div>
@@ -1097,7 +2300,7 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         </div>
       </div>
 
-      <!-- Insights group -->
+      <!-- Best Day (moved here from the removed Insights group) -->
       <div class="tab-section" id="tab-best-day">
         <div class="container">
           <div class="best-day-topbar">
@@ -1110,32 +2313,14 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
               <div class="best-day-presets" id="bestDayPresets">
                 <button class="best-day-preset-btn active" data-preset="last-week">Last Week</button>
               </div>
-              <input type="text" id="bestDayRangeInput" class="best-day-range-input" placeholder="Select date range" readonly>
+              <div class="range-picker-input-wrapper">
+                <input type="text" id="bestDayRangeInput" class="best-day-range-input" placeholder="Select time period" readonly>
+                <i class="fa-regular fa-calendar"></i>
+              </div>
             </div>
           </div>
 
           <div class="best-day-result" id="bestDayResult"></div>
-        </div>
-      </div>
-
-      <div class="tab-section" id="tab-avg-completion-time">
-        <div class="container placeholder-tab">
-          <p class="head">Average Completion Time</p>
-          <p class="placeholder-note">No content yet.</p>
-        </div>
-      </div>
-
-      <div class="tab-section" id="tab-longest-streak">
-        <div class="container placeholder-tab">
-          <p class="head">Longest Streak</p>
-          <p class="placeholder-note">No content yet.</p>
-        </div>
-      </div>
-
-      <div class="tab-section" id="tab-productivity-score">
-        <div class="container placeholder-tab">
-          <p class="head">Productivity Score</p>
-          <p class="placeholder-note">No content yet.</p>
         </div>
       </div>
 
@@ -1164,19 +2349,81 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
         </div>
       </div>
 
-      <!-- ───── TAB: SETTINGS ───── -->
-      <div class="tab-section" id="tab-settings">
+      <!-- ───── TAB: PROFILE ───── -->
+      <div class="tab-section" id="tab-profile">
         <div class="container">
-          <p class="head">Settings</p>
-          <p class="sub-head">Customize your experience</p>
-        </div>
-      </div>
+          <p class="head">Profile</p>
+          <p class="sub-head">Manage your personal details and preferences</p>
 
-      <!-- ───── TAB: PLUGINS ───── -->
-      <div class="tab-section" id="tab-plugins">
-        <div class="container">
-          <p class="head">Plugins & Integrations</p>
-          <p class="sub-head">Connect your favourite tools</p>
+          <form class="profile-layout" id="profileForm" novalidate>
+
+            <!-- Photo -->
+            <div class="profile-card profile-photo-card">
+              <div class="profile-avatar-preview" id="profileAvatarPreview">
+                <span id="profileAvatarInitials"><i class="fa-solid fa-user"></i></span>
+              </div>
+              <input type="file" id="profilePhotoInput" accept="image/*" hidden>
+              <button type="button" class="modal-btn modal-btn-secondary" id="profilePhotoUploadBtn">
+                <i class="fa-solid fa-camera"></i> Upload Photo
+              </button>
+              <button type="button" class="profile-link-btn" id="profilePhotoRemoveBtn">Remove photo</button>
+              <p class="profile-hint">JPG, PNG or GIF. Your photo is resized and kept only in this browser.</p>
+              <small class="profile-error" id="profilePhotoError"></small>
+            </div>
+
+            <!-- Details -->
+            <div class="profile-card">
+              <div class="profile-row">
+                <div class="profile-field">
+                  <label for="profileFullName">Full Name</label>
+                  <input type="text" id="profileFullName" class="profile-input" placeholder="Enter your full name" maxlength="50" autocomplete="name">
+                  <small class="profile-error" id="profileFullNameError"></small>
+                </div>
+
+                <div class="profile-field">
+                  <label for="profileUsername">Username</label>
+                  <div class="profile-input-prefix">
+                    <span>@</span>
+                    <input type="text" id="profileUsername" class="profile-input" placeholder="username" maxlength="20" autocomplete="username">
+                  </div>
+                  <small class="profile-error" id="profileUsernameError"></small>
+                </div>
+              </div>
+
+              <div class="profile-field">
+                <label for="profileProfession">Profession</label>
+                <input type="text" id="profileProfession" class="profile-input" placeholder="e.g. Software Engineer" maxlength="60">
+              </div>
+
+              <div class="profile-field">
+                <label for="profileBio">Bio</label>
+                <textarea id="profileBio" class="profile-input profile-textarea" placeholder="Tell us a little about yourself" maxlength="200" rows="4"></textarea>
+                <small class="profile-hint profile-counter"><span id="profileBioCount">0</span> / 200</small>
+              </div>
+
+              <div class="profile-field">
+                <span class="profile-label">Preferred Time Format</span>
+                <div class="profile-segmented" role="radiogroup" aria-label="Preferred time format">
+                  <label>
+                    <input type="radio" name="profileTimeFormat" value="12" checked>
+                    <span>12 Hours</span>
+                  </label>
+                  <label>
+                    <input type="radio" name="profileTimeFormat" value="24">
+                    <span>24 Hours</span>
+                  </label>
+                </div>
+                <small class="profile-hint">Used for task times and the due date picker.</small>
+              </div>
+
+              <div class="profile-actions">
+                <span class="profile-status" id="profileSaveStatus" role="status"><i class="fa-solid fa-circle-check"></i> Profile saved</span>
+                <button type="button" class="modal-btn modal-btn-secondary" id="profileCancelBtn">Discard Changes</button>
+                <button type="submit" class="modal-btn modal-btn-primary" id="profileSaveBtn">Save Changes</button>
+              </div>
+            </div>
+
+          </form>
         </div>
       </div>
 
@@ -1184,6 +2431,101 @@ href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <!-- ===== END MAIN CONTEN                      T AREA ===== -->
 
   </div>
+
+  <!-- ===== Confirm Modal (mark-as-incomplete / delete) ===== -->
+  <div class="modal-overlay" id="confirmModalOverlay">
+    <div class="modal-box confirm-modal">
+      <h3 class="modal-title" id="confirmModalTitle">Are you sure?</h3>
+      <p class="modal-message" id="confirmModalMessage"></p>
+      <div class="modal-actions">
+        <button type="button" class="modal-btn modal-btn-secondary" id="confirmModalNoBtn">No</button>
+        <button type="button" class="modal-btn modal-btn-danger" id="confirmModalYesBtn">Yes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Add Task Modal (opened by the top bar "Add Task" button) ===== -->
+  <div class="modal-overlay" id="addTaskModalOverlay">
+    <div class="modal-box edit-task-modal">
+      <h3 class="modal-title">Add Task</h3>
+
+      <div class="modal-field">
+        <label for="addTaskModalText">Task</label>
+        <input type="text" id="addTaskModalText" class="task-field" placeholder="Enter task">
+      </div>
+
+      <div class="modal-field">
+        <label>Priority</label>
+        <div class="custom-select custom-select-wide" id="addTaskModalPriorityDropdown">
+          <div class="selected">
+            <span>No Priority</span>
+            <span class="arrow">▼</span>
+          </div>
+          <ul class="options">
+            <li data-value="">No Priority</li>
+            <li data-value="high">High</li>
+            <li data-value="medium">Medium</li>
+            <li data-value="low">Low</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="modal-field">
+        <label for="addTaskModalDueDate">Due Date</label>
+        <div class="date-input-wrapper">
+          <input type="text" id="addTaskModalDueDate" placeholder="Due Date" readonly>
+          <i class="fa-regular fa-calendar"></i>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="modal-btn modal-btn-secondary" id="addTaskModalCancelBtn">Cancel</button>
+        <button type="button" class="modal-btn modal-btn-primary" id="addTaskModalSaveBtn">Add Task</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Edit Task Modal ===== -->
+  <div class="modal-overlay" id="editTaskModalOverlay">
+    <div class="modal-box edit-task-modal">
+      <h3 class="modal-title">Edit Task</h3>
+
+      <div class="modal-field">
+        <label for="editTaskText">Task</label>
+        <input type="text" id="editTaskText" class="task-field">
+      </div>
+
+      <div class="modal-field">
+        <label>Priority</label>
+        <div class="custom-select custom-select-wide" id="editTaskPriorityDropdown">
+          <div class="selected">
+            <span>No Priority</span>
+            <span class="arrow">▼</span>
+          </div>
+          <ul class="options">
+            <li data-value="">No Priority</li>
+            <li data-value="high">High</li>
+            <li data-value="medium">Medium</li>
+            <li data-value="low">Low</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="modal-field">
+        <label for="editTaskDueDate">Due Date</label>
+        <div class="date-input-wrapper">
+          <input type="text" id="editTaskDueDate" placeholder="Due Date" readonly>
+          <i class="fa-regular fa-calendar"></i>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="modal-btn modal-btn-secondary" id="editTaskCancelBtn">Cancel</button>
+        <button type="button" class="modal-btn modal-btn-primary" id="editTaskSaveBtn">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script type="module" src="js/app.js"></script>
